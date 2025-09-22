@@ -1,18 +1,18 @@
 services:
   app:
     build: .
-    container_name: parley-chat-app
+    container_name: parley-chat-sova
     restart: "unless-stopped"
     volumes:
       - ./config.toml:/app/config.toml
       - ./data:/app/data
-      - ../frontend:/frontend
+      - ../Mura:/Mura
     environment:
       - PYTHONUNBUFFERED=1
     networks:
       - parley-chat-network
     expose:
-      - "42835" # change the port to the port in the config in config.toml
+      - "42835"
     healthcheck: # The health check URL must contain the URI Path if set in config.toml
       test: ["CMD", "curl", "-f", "http://localhost:42835/health"]
       interval: 30s
@@ -25,7 +25,7 @@ services:
     container_name: parley-chat-nginx
     restart: "unless-stopped"
     ports:
-      - "${APP_PORT:-42835}:${APP_PORT:-42835}"
+      - "42835:42835" # To change the port, change the first part of the port before :
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro

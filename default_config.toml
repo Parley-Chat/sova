@@ -5,7 +5,7 @@ version=1 # DO NOT TOUCH IF YOU DON'T KNOW WHAT YOU'RE DOING
 uri_prefix="$URI_PREFIX" # URI Prefix, you must include it when connecting to the server (https://example.com/uri_prefix/) if present
 [server]
     host="0.0.0.0" # server host
-    port=$PORT # server port
+    port=42835 # server port
     dev=false # Dev mode, DO NOT ENABLE THIS if you're using this in production, you can use --dev cli argument for a dev environment too
     threads=32 # number of threads for the webserver, the more the the threads, the higher concurrency, but also higher CPU usage
     max_content_length=67108864 # The max content length the webserver will process in bytes, if it's more than that, it will return a 413 error
@@ -13,7 +13,7 @@ uri_prefix="$URI_PREFIX" # URI Prefix, you must include it when connecting to th
 [frontend]
     hosted=true # change to false if you don't want the backend host the frontend
     excluded_frontend_root_paths=["README.md", "400.html", "404.html", "405.html", "413.html", "415.html", "500.html", ".git", "quickrun.js"]
-    frontend_directory="../frontend"
+    frontend_directory="../Mura"
 [max_members]
     encrypted_channels=100 # maximum members allowed in encrypted channels (DM/Group) due to key computation overhead
     max_channels=50 # maximum number of channels a user can be a member of
