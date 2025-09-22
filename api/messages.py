@@ -193,7 +193,7 @@ def sending_messages(db:SQLite, id, channel_id):
             db.update_data("members", {"hidden": None}, {"user_id": id, "channel_id": channel_id})
             dm_unhide(channel_id, id, db)
 
-    message_sent(channel_id, message_data, id)
+    message_sent(channel_id, message_data, id, db)
 
     return jsonify({"message_id": message_id, "attachments": attachments, "success": True}), 201
 
@@ -230,7 +230,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
         """, (message_id,))[0]
         updated_message["user"]=json.loads(updated_message["user"])
         updated_message["attachments"]=json.loads(updated_message["attachments"]) if updated_message["attachments"] else []
-        message_edited(channel_id, updated_message, id)
+        message_edited(channel_id, updated_message, id, db)
 
         return jsonify({"success": True})
     elif request.method=="DELETE":
