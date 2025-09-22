@@ -1,0 +1,7 @@
+flask
+waitress
+nanoid
+Pillow
+bcrypt
+cryptography
+cffi
