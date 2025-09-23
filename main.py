@@ -2,7 +2,7 @@ import os
 os.chdir(os.path.dirname(__file__))
 from utils import stopping, db_version, dev_mode, config, BLUE, YELLOW, RED, colored_log
 os.makedirs(os.path.dirname(config["data_dir"]["database"]), exist_ok=True)
-from flask import Flask, send_from_directory, abort, request, jsonify
+from flask import Flask, send_from_directory, abort, request, jsonify, redirect, make_response
 from api import api_bp
 from api.utils import make_json_error, pass_db
 from werkzeug.utils import safe_join
@@ -105,6 +105,13 @@ elif not frontend_present:
     colored_log(RED, "ERROR", "Frontend directory isn't present")
 
 app.register_blueprint(api_bp, url_prefix=route_rule("/api/v1"))
+
+api_url=route_rule("/api/v1/")
+@app_route("/api/v1")
+def api_index():
+    resp=make_response(redirect(api_url, 301))
+    resp.headers["Access-Control-Allow-Origin"]="*"
+    return resp
 
 @app_route("/pfp/<string:pfp>", methods=["GET"])
 @pass_db

@@ -1,5 +1,5 @@
 services:
-  app:
+  sova:
     build: .
     container_name: parley-chat-sova
     restart: "unless-stopped"
@@ -25,12 +25,12 @@ services:
     container_name: parley-chat-nginx
     restart: "unless-stopped"
     ports:
-      - "42835:42835" # To change the port, change the first part of the port before :
+      - "${PORT:-42835}:42835"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
-      app:
+      sova:
         condition: service_healthy
     networks:
       - parley-chat-network
