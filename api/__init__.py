@@ -8,14 +8,14 @@ from .messages import messages_bp
 from .users import users_bp
 from .pins import pins_bp
 from .stream import stream_bp
-from .utils import cleaner
+from .utils import process_cors_headers, cleaner
 from threading import Thread
 
 api_bp=Blueprint("API", __name__)
 
 @api_bp.after_request
 def add_cors_headers(resp):
-    resp.headers["Access-Control-Allow-Origin"]="*"
+    process_cors_headers(resp)
     return resp
 
 api_bp.register_blueprint(auth_bp)

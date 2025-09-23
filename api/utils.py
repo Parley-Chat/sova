@@ -294,3 +294,8 @@ def get_pagination_params():
     if page_size>100: page_size=100
     offset=(page-1)*page_size
     return {"page": page, "page_size": page_size, "offset": offset}
+
+def process_cors_headers(resp):
+    resp.headers["Access-Control-Allow-Headers"]="*"
+    resp.headers["Access-Control-Allow-Methods"]="GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+    resp.headers["Access-Control-Allow-Origin"]="*"
