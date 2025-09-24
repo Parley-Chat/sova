@@ -80,6 +80,8 @@ def delete_account(db:SQLite, id):
     pfp=db.select_data("users", ["pfp"], {"id": id})
     db.delete_data("users", {"id": id})
     if pfp and pfp[0]["pfp"]: delete_pfp_file(pfp[0]["pfp"])
+    db.cleanup_unused_files()
+    db.cleanup_unused_keys()
     return jsonify({"success": True})
 
 @users_bp.route("/me/sessions")
