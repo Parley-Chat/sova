@@ -77,10 +77,9 @@ def delete_account(db:SQLite, id):
             channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
             if channel_pfp and channel_pfp[0]["pfp"]: delete_pfp_file(channel_pfp[0]["pfp"])
             db.delete_data("channels", {"id": channel_id})
-    pfp=db.select_data("users", ["pfp"])
+    pfp=db.select_data("users", ["pfp"], {"id": id})
     db.delete_data("users", {"id": id})
     if pfp and pfp[0]["pfp"]: delete_pfp_file(pfp[0]["pfp"])
-    db.delete_data("users", {"id": id})
     return jsonify({"success": True})
 
 @users_bp.route("/me/sessions")
