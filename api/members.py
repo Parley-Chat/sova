@@ -109,7 +109,7 @@ def manage_members(db:SQLite, id, channel_id, target_username):
     if id==target_user_id:
         if has_permission(target_permissions, perm.owner, channel_permissions):
             if has_permission(new_permissions, perm.owner, channel_permissions):
-                cursor=db._execute("""
+                cursor=db.execute("""
                     UPDATE members 
                     SET permissions = ?
                     WHERE channel_id = ? AND user_id = ? 

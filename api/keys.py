@@ -25,7 +25,7 @@ def channel_key_status(db:SQLite, id, channel_id):
         (channel_id,)
     )
     if not current_key_info: return jsonify({"key_id": None})
-    if current_key_info[0]["expires_at"]<timestamp(): return jsonify({"key_id": None})
+    if current_key_info[0]["expires_at"]<timestamp(True): return jsonify({"key_id": None})
     return jsonify({"key_id": current_key_info[0]["key_id"]})
 
 @keys_bp.route("/channel/<string:channel_id>/key", methods=["POST"])
@@ -54,7 +54,7 @@ def store_channel_keys(db:SQLite, id, channel_id):
         if username not in user_keys: return make_json_error(400, "User missing from keys")
     key_id=generate()
     with db:
-        db.insert_data("channels_keys_info", {"key_id": key_id, "channel_id": channel_id, "by": id, "timestamp": timestamp(), "expires_at": timestamp()+86400})
+        db.insert_data("channels_keys_info", {"key_id": key_id, "channel_id": channel_id, "by": id, "timestamp": timestamp(), "expires_at": timestamp(True)+86400})
         for username, encrypted_key in user_keys.items():
             db.insert_data("channels_keys", {"id": key_id, "channel_id": channel_id, "user_id": user_ids[username], "key": encrypted_key})
     return jsonify({"key_id": key_id, "success": True}), 201
@@ -67,13 +67,13 @@ def get_key(db:SQLite, id, key_id):
     if not result: return make_json_error(404, "Key not found")
     return jsonify({**result[0], "success": True})
 
-@keys_bp.route("/keys")
+@keys_bp.route("/keys", methods=["POST"])
 @logged_in()
 @sliding_window_rate_limiter(limit=20, window=60, user_limit=10)
 def get_keys(db:SQLite, id):
     key_ids=request.get_json()
     if not isinstance(key_ids, list): return make_json_error(400, "Invalid payload format")
     if len(key_ids)>100: return make_json_error(400, "Too many keys requested")
-    results=db.execute_raw_sql(f"SELECT cki.key_id, ck.key, cki.by, cki.expires_at FROM channels_keys ck JOIN channels_keys_info cki ON ck.id=cki.key_id WHERE ck.user_id=? AND ck.id IN ({','.join('?' * len(key_ids))})", [id] + key_ids)
+    results=db.execute_raw_sql(f"SELECT cki.key_id, ck.key, cki.by, cki.expires_at FROM channels_keys ck JOIN channels_keys_info cki ON ck.id=cki.key_id WHERE ck.user_id=? AND ck.id IN ({','.join('?' * len(key_ids))})", [id]+key_ids)
     if not results: return make_json_error(404, "No key found")
     return jsonify(results)

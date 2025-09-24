@@ -7,16 +7,21 @@ from api import api_bp
 from api.utils import make_json_error, pass_db, process_cors_headers
 from werkzeug.utils import safe_join
 from db import SQLite
+from migrations import run_migrations
 import sys
 
-with SQLite() as db:
-    user_version=db.execute_raw_sql("PRAGMA user_version;")[0]["user_version"]
-    not_same_db_server=user_version!=db_version
-    if not_same_db_server and user_version!=0:
-        colored_log(RED, "[ERROR]", f"Database version is v{user_version} but the current version is v{db_version}, migration is currently not implemented, exiting to prevent database corruption")
+try:
+    current_db_version=run_migrations()
+    if current_db_version!=db_version:
+        colored_log(RED, "ERROR", f"Database version is v{current_db_version} but the expected version is v{db_version}")
         sys.exit(1)
+except Exception as e:
+    colored_log(RED, "ERROR", f"Migration failed: {e}")
+    sys.exit(1)
+
+with SQLite() as db:
     db.create_table("users", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "id": "TEXT UNIQUE NOT NULL", "username": "TEXT UNIQUE NOT NULL", "display_name": "TEXT", "pfp": "TEXT", "passkey": "TEXT NOT NULL", "public_key": "TEXT NOT NULL", "created_at": "INTEGER NOT NULL", "FOREIGN KEY (pfp)": "REFERENCES files (id) ON DELETE SET NULL"})
-    db.create_table("session", {"user": "TEXT NOT NULL", "token_hash": "TEXT PRIMARY KEY", "id": "TEXT UNIQUE NOT NULL", "device": "TEXT", "browser": "TEXT", "logged_in_at": "INTEGER NOT NULL", "next_challenge": "INTEGER", "FOREIGN KEY (user)": "REFERENCES users (id) ON DELETE CASCADE"})
+    db.create_table("session", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "user": "TEXT NOT NULL", "token_hash": "TEXT UNIQUE NOT NULL", "id": "TEXT UNIQUE NOT NULL", "device": "TEXT", "browser": "TEXT", "logged_in_at": "INTEGER NOT NULL", "next_challenge": "INTEGER", "FOREIGN KEY (user)": "REFERENCES users (id) ON DELETE CASCADE"})
     db.create_table("channels", {"id": "TEXT PRIMARY KEY", "name": "TEXT", "pfp": "TEXT", "type": "INTEGER NOT NULL CHECK (type IN (1, 2, 3))", "permissions": "INTEGER NOT NULL DEFAULT 0", "dm": "TEXT", "invite_code": "TEXT UNIQUE", "created_at": "INTEGER NOT NULL", "FOREIGN KEY (pfp)": "REFERENCES files (id) ON DELETE SET NULL"})
     db.create_table("members", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "user_id": "TEXT", "channel_id": "TEXT", "joined_at": "INTEGER NOT NULL", "permissions": "INTEGER", "message_seq": "INTEGER DEFAULT 0", "hidden": "INTEGER CHECK (hidden IS NULL OR hidden = 1)", "UNIQUE": "(user_id, channel_id)", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE"})
     db.create_table("messages", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "id": "TEXT UNIQUE NOT NULL", "channel_id": "TEXT NOT NULL", "user_id": "TEXT NOT NULL", "content": "TEXT NOT NULL", "key": "TEXT", "iv": "TEXT", "timestamp": "INTEGER NOT NULL", "edited_at": "INTEGER", "replied_to": "TEXT", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE"})
@@ -42,7 +47,7 @@ with SQLite() as db:
     db.create_index("channels_keys_info", "channel_id")
     db.create_index("message_reads", "user_id")
     db.create_index("message_reads", "channel_id")
-    if not_same_db_server: db.execute_raw_sql(f"PRAGMA user_version={db_version};")
+    db.execute_raw_sql(f"PRAGMA user_version={db_version};")
 
 uri_prefix="/"+config["uri_prefix"] if config["uri_prefix"] else ""
 def route_rule(rule: str): return uri_prefix+rule

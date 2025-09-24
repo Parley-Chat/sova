@@ -143,7 +143,7 @@ def logged_in(stream=False):
                 if not logged_in_at: return make_json_error(401, "Unauthorized")
                 logged_in_at=logged_in_at[0]["logged_in_at"]
                 id, challenge_hash, challenge_enc=get_challenge(public_key)
-                db.delete_data("session", {"token_hash": hash_token(token)})
+                if not db.delete_data("session", {"token_hash": hash_token(token)}): return make_json_error(401, "Unauthorized")
                 with challenges_lock: challenges[id]={"id": user, "hashed": challenge_hash, "expire": timestamp()+60, "logged_in_at": logged_in_at}
                 return jsonify({"id": id, "challenge": challenge_enc, "success": False}), 419
             if pass_id: kwargs_extra["id"]=data["user"]

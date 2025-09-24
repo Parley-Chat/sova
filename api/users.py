@@ -86,7 +86,7 @@ def delete_account(db:SQLite, id):
 @sliding_window_rate_limiter(limit=50, window=60, user_limit=25)
 @logged_in()
 def sessions_get(db:SQLite, id, session_id):
-    sessions=db.select_data("session", ["id", "device", "browser", "logged_in_at"], {"user": id})
+    sessions=db.select_data("session", ["id", "device", "browser", "logged_in_at"], {"user": id}, "seq DESC")
     for session in sessions: session["current"]=session["id"]==session_id
     return jsonify(sessions)
 

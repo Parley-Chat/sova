@@ -23,7 +23,7 @@ os.makedirs(config["data_dir"]["attachments"], exist_ok=True)
 @sliding_window_rate_limiter(limit=200, window=60, user_limit=100)
 def channel_messages(db:SQLite, id, channel_id):
     member_data=db.select_data("members", ["permissions", "message_seq"], {"user_id": id, "channel_id": channel_id})
-    if not member_data: return make_json_error(403, "Not a member of this channel")
+    if not member_data: return make_json_error(404, "Channel not found")
     channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
     if not channel_data: return make_json_error(404, "Channel not found")
     user_permissions=member_data[0]["permissions"]
@@ -121,7 +121,7 @@ def sending_messages(db:SQLite, id, channel_id):
     replied_to=request.form.get("replied_to")
     if replied_to and not db.exists("messages", {"id": replied_to, "channel_id": channel_id}): return make_json_error(400, "replied_to message not found in this channel")
     member_permissions=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
-    if not member_permissions: return make_json_error(403, "Not a member of this channel")
+    if not member_permissions: return make_json_error(404, "Channel not found")
     channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
     if not channel_data: return make_json_error(404, "Channel not found")
     if channel_data[0]["type"]==1:
@@ -130,7 +130,7 @@ def sending_messages(db:SQLite, id, channel_id):
     member_permissions=member_permissions[0]["permissions"]
     channel_permissions=channel_data[0]["permissions"]
     if not has_permission(member_permissions, perm.send_messages, channel_permissions): return make_json_error(403, "No permission to send messages")
-    if len(msg)>(config["messages"]["max_message_length"] if channel_data[0]["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "message too long")
+    if len(msg)>(config["messages"]["max_message_length"] if channel_data[0]["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
     key=None
     iv=None
     if channel_data[0]["type"]!=3:
@@ -142,7 +142,7 @@ def sending_messages(db:SQLite, id, channel_id):
             "ORDER BY cki.seq DESC LIMIT 1",
             (channel_id,)
         )
-        if not latest_user_key or latest_user_key[0]["expires_at"]<timestamp(): return make_json_error(403, "No encryption key available")
+        if not latest_user_key or latest_user_key[0]["expires_at"]<timestamp(True): return make_json_error(403, "No encryption key available")
         if key!=latest_user_key[0]["key_id"]: return make_json_error(400, "Invalid or outdated encryption key")
         if len(request.form["iv"])!=16: return make_json_error(400, "Invalid iv parameter, error: length")
         iv=request.form["iv"]

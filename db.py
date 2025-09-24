@@ -6,6 +6,7 @@ import hashlib
 import time
 from typing import List, Dict, Any, Union, Tuple, Optional
 from utils import config
+from api.utils import timestamp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ class SQLite:
                 logger.error(f"Failed to connect to database {self.db_path}: {e}")
                 raise
 
-    def _execute(self, sql_query: str, params: Union[Tuple, List] = ()) -> sqlite3.Cursor:
+    def execute(self, sql_query: str, params: Union[Tuple, List] = ()) -> sqlite3.Cursor:
         self._connect()
         try:
             self._cursor.execute(sql_query, tuple(params))
@@ -111,7 +112,7 @@ class SQLite:
         columns_sql = ", ".join(column_defs)
         create_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({columns_sql})"
         try:
-            self._execute(create_sql)
+            self.execute(create_sql)
             if not self._in_context:
                 self.commit()
             return True
@@ -128,7 +129,7 @@ class SQLite:
                 column_def += f" DEFAULT {prepared_default}"
         alter_sql = f"ALTER TABLE {table_name} ADD COLUMN {column_def}"
         try:
-            self._execute(alter_sql)
+            self.execute(alter_sql)
             if not self._in_context:
                 self.commit()
             return True
@@ -148,7 +149,7 @@ class SQLite:
         values = [self._prepare_value_for_db(data[col]) for col in columns]
         columns_str = ", ".join(columns)
         insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
-        cursor = self._execute(insert_sql, values)
+        cursor = self.execute(insert_sql, values)
         result = cursor.lastrowid
         if result is not None and not self._in_context:
             self.commit()
@@ -168,7 +169,7 @@ class SQLite:
             query += f" LIMIT {limit}"
         if offset is not None:
             query += f" OFFSET {offset}"
-        cursor = self._execute(query, params)
+        cursor = self.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
     def update_data(self, table_name: str, set_data: Dict[str, Any], conditions: Dict[str, Any]) -> int:
@@ -183,7 +184,7 @@ class SQLite:
         where_clauses, where_values = self._prepare_conditions_for_db(conditions)
         update_sql = f"UPDATE {table_name} SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
         params = set_values + where_values
-        cursor = self._execute(update_sql, params)
+        cursor = self.execute(update_sql, params)
         result = cursor.rowcount
         if result > 0 and not self._in_context:
             self.commit()
@@ -196,7 +197,7 @@ class SQLite:
         where_clauses, where_values = self._prepare_conditions_for_db(conditions)
         delete_sql = f"DELETE FROM {table_name} WHERE {' AND '.join(where_clauses)}"
         params = where_values
-        cursor = self._execute(delete_sql, params)
+        cursor = self.execute(delete_sql, params)
         result = cursor.rowcount
         if result > 0 and not self._in_context:
             self.commit()
@@ -205,7 +206,7 @@ class SQLite:
     def drop_table(self, table_name: str) -> bool:
         drop_sql = f"DROP TABLE IF EXISTS {table_name}"
         try:
-            self._execute(drop_sql)
+            self.execute(drop_sql)
             if not self._in_context:
                 self.commit()
             return True
@@ -214,12 +215,12 @@ class SQLite:
 
     def get_table_info(self, table_name: str) -> List[Dict[str, Any]]:
         query = f"PRAGMA table_info({table_name})"
-        cursor = self._execute(query)
+        cursor = self.execute(query)
         return [dict(row) for row in cursor.fetchall()]
 
     def get_all_table_names(self) -> List[str]:
         query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-        cursor = self._execute(query)
+        cursor = self.execute(query)
         return [row['name'] for row in cursor.fetchall()]
 
     def exists(self, table_name: str, conditions: Dict[str, Any]) -> bool:
@@ -228,7 +229,7 @@ class SQLite:
             return False
         where_clauses, params = self._prepare_conditions_for_db(conditions)
         query = f"SELECT 1 FROM {table_name} WHERE {' AND '.join(where_clauses)} LIMIT 1"
-        cursor = self._execute(query, params)
+        cursor = self.execute(query, params)
         return cursor.fetchone() is not None
 
     def create_index(self, table_name: str, column_name: Union[str, List[str]], unique: bool = False) -> bool:
@@ -242,7 +243,7 @@ class SQLite:
         unique_str = "UNIQUE" if unique else ""
         index_sql = f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns_str})"
         try:
-            self._execute(index_sql)
+            self.execute(index_sql)
             if not self._in_context:
                 self.commit()
             return True
@@ -252,7 +253,7 @@ class SQLite:
     def drop_index(self, index_name: str) -> bool:
         drop_sql = f"DROP INDEX IF EXISTS {index_name}"
         try:
-            self._execute(drop_sql)
+            self.execute(drop_sql)
             if not self._in_context:
                 self.commit()
             return True
@@ -265,11 +266,11 @@ class SQLite:
         if table_name:
             query += " WHERE tbl_name = ?"
             params.append(table_name)
-        cursor = self._execute(query, params)
+        cursor = self.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
     def execute_raw_sql(self, sql_query: str, params: Union[Tuple, List] = ()) -> List[Dict[str, Any]]:
-        cursor = self._execute(sql_query, params)
+        cursor = self.execute(sql_query, params)
         is_write_operation = sql_query.strip().upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP"))
         if is_write_operation:
             if not self._in_context:
@@ -281,6 +282,16 @@ class SQLite:
                 return [dict(row) for row in rows] if rows else []
             except sqlite3.ProgrammingError:
                 return []
+
+    def execute_script(self, sql_script: str) -> None:
+        self._connect()
+        try:
+            self._cursor.executescript(sql_script)
+            if not self._in_context:
+                self.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database Error executing script: {e}")
+            raise
 
     def batch_select(self, queries: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
         results = []
@@ -353,7 +364,7 @@ class SQLite:
             if not unused_files: return
             file_ids = [f["id"] for f in unused_files]
             placeholders = ",".join(["?"] * len(file_ids))
-            self._execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids)
+            self.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids)
         for file_record in unused_files:
             file_type = file_record["file_type"]
             if file_type == "attachment":
@@ -369,12 +380,12 @@ class SQLite:
     def cleanup_unused_keys(self):
         """Remove keys that are no longer referenced by any messages"""
         with self:
-            self._execute("""
+            self.execute("""
                 DELETE FROM channels_keys_info 
                 WHERE key_id NOT IN (SELECT DISTINCT key FROM messages WHERE key IS NOT NULL)
                 AND expires_at < ?
-            """, (round(time.time()),))
-            self._execute("""
+            """, (timestamp(True),))
+            self.execute("""
                 DELETE FROM channels_keys 
                 WHERE id NOT IN (SELECT DISTINCT key_id FROM channels_keys_info)
             """)
