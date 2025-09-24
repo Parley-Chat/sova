@@ -14,7 +14,6 @@ version=version_data["version"]
 db_version=version_data["db"]
 
 if not os.path.isfile("config.toml") or os.path.getsize("config.toml")==0:
-    from .random_port import get_random_unused_port
     with open("default_config.toml") as fc:
         with open("config.toml", "w") as f:
             f.write("".join(fc.readlines()[2:]).replace("$URI_PREFIX", generate()))

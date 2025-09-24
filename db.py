@@ -4,9 +4,9 @@ import logging
 import os
 import hashlib
 import time
+import math
 from typing import List, Dict, Any, Union, Tuple, Optional
 from utils import config
-from api.utils import timestamp
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -384,7 +384,7 @@ class SQLite:
                 DELETE FROM channels_keys_info 
                 WHERE key_id NOT IN (SELECT DISTINCT key FROM messages WHERE key IS NOT NULL)
                 AND expires_at < ?
-            """, (timestamp(True),))
+            """, (math.floor(time.time()*1000),))
             self.execute("""
                 DELETE FROM channels_keys 
                 WHERE id NOT IN (SELECT DISTINCT key_id FROM channels_keys_info)

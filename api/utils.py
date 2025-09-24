@@ -13,6 +13,7 @@ from functools import wraps
 import inspect
 from threading import Lock
 from utils import config, generate
+import math
 
 os.makedirs(config["data_dir"]["pfps"], exist_ok=True)
 
@@ -20,8 +21,8 @@ def hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 def timestamp(precise=False):
-    if precise: return round(time.time()*1000)
-    return round(time.time())
+    if precise: return math.floor(time.time()*1000)
+    return math.floor(time.time())
 
 def make_json_error(status, error): return jsonify({"error": error, "success": False}), status
 
