@@ -10,11 +10,7 @@ from db import SQLite
 from migrations import run_migrations
 import sys
 
-try:
-    current_db_version=run_migrations()
-    if current_db_version!=db_version:
-        colored_log(RED, "ERROR", f"Database version is v{current_db_version} but the expected version is v{db_version}")
-        sys.exit(1)
+try: run_migrations()
 except Exception as e:
     colored_log(RED, "ERROR", f"Migration failed: {e}")
     sys.exit(1)

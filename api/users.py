@@ -3,7 +3,7 @@ from .utils import (
     logged_in, sliding_window_rate_limiter, make_json_error, handle_pfp, delete_pfp_file,
     perm, has_permission, timestamp
 )
-from .stream import member_info_changed
+from .stream import member_info_changed, member_leave
 from db import SQLite
 
 users_bp=Blueprint("users", __name__)
@@ -56,6 +56,7 @@ def edit_me(db:SQLite, id):
 @logged_in()
 @sliding_window_rate_limiter(limit=3, window=60, user_limit=2)
 def delete_account(db:SQLite, id):
+    user_data=db.select_data("users", ["username", "display_name", "pfp"], {"id": id})[0]
     user_channels=db.execute_raw_sql("SELECT c.id, c.type, c.pfp, m.permissions, c.permissions as channel_permissions FROM channels c JOIN members m ON c.id=m.channel_id WHERE m.user_id=?", (id,))
     channels_to_delete=[]
     for channel in user_channels:
@@ -72,6 +73,9 @@ def delete_account(db:SQLite, id):
                     if "force" not in request.args:
                         return make_json_error(403, "Cannot delete account as you are the last owner of non-empty channels, Use ?force to delete the channels")
                     channels_to_delete.append(channel_id)
+    for channel in user_channels:
+        channel_id=channel["id"]
+        member_leave(channel_id, {"id": id, **user_data}, db)
     if "force" in request.args:
         for channel_id in channels_to_delete:
             channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
