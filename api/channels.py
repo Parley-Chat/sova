@@ -106,7 +106,7 @@ def channel_creation(db:SQLite, id):
         return make_json_error(400, "Invalid channel type format")
     if channel_type==1:
         if "target_user" not in request.form: return make_json_error(400, "target_user parameter is missing")
-        if len(request.form["target_user"]) < 3 or len(request.form["target_user"]) > 20: return make_json_error(400, "Invalid target_user parameter, error: length")
+        if len(request.form["target_user"])<3 or len(request.form["target_user"])>20: return make_json_error(400, "Invalid target_user parameter, error: length")
         target_user=db.select_data("users", ["id"], {"username": request.form["target_user"]})
         if not target_user: return make_json_error(404, "Target user not found")
         target_id=target_user[0]["id"]
@@ -148,8 +148,14 @@ def channel_creation(db:SQLite, id):
                 db.insert_data("members", {"user_id": target_id, "channel_id": channel_id, "joined_at": timestamp(), "message_seq": message_seq})
 
             # Get channel data for both users
-            target_user_data=db.select_data("users", ["username", "display_name", "pfp"], {"id": target_id})[0]
-            current_user_data=db.select_data("users", ["username", "display_name", "pfp"], {"id": id})[0]
+            user_data_results=db.execute_raw_sql("""
+                SELECT u1.username as target_username, u1.display_name as target_display, u1.pfp as target_pfp,
+                       u2.username as current_username, u2.display_name as current_display, u2.pfp as current_pfp
+                FROM users u1, users u2
+                WHERE u1.id=? AND u2.id=?
+            """, (target_id, id))[0]
+            target_user_data={"username": user_data_results["target_username"], "display_name": user_data_results["target_display"], "pfp": user_data_results["target_pfp"]}
+            current_user_data={"username": user_data_results["current_username"], "display_name": user_data_results["current_display"], "pfp": user_data_results["current_pfp"]}
 
             channel_data={
                 "id": channel_id,
@@ -190,7 +196,7 @@ def channel_creation(db:SQLite, id):
             raise e
     elif channel_type in [2, 3]:
         if "name" not in request.form: return make_json_error(400, "name parameter is missing")
-        if len(request.form["name"]) < 1 or len(request.form["name"]) > 50: return make_json_error(400, "Invalid name parameter, error: length")
+        if len(request.form["name"])<1 or len(request.form["name"])>50: return make_json_error(400, "Invalid name parameter, error: length")
         channel_id=generate()
         pfp_result=handle_pfp()
         if isinstance(pfp_result, tuple): return pfp_result
@@ -239,9 +245,9 @@ def channels_management(db:SQLite, id, channel_id):
             pfp_result=handle_pfp(error_as_text=True)
             if not isinstance(pfp_result, tuple):
                 if pfp_result:
-                    old_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
-                    old_pfp_id=old_pfp[0]["pfp"] if old_pfp and old_pfp[0]["pfp"] else None
-                    if old_pfp_id!=old_pfp:
+                    old_pfp_data=db.execute_raw_sql("SELECT pfp FROM channels WHERE id=?", (channel_id,))
+                    old_pfp_id=old_pfp_data[0]["pfp"] if old_pfp_data and old_pfp_data[0]["pfp"] else None
+                    if old_pfp_id!=pfp_result:
                         update_data["pfp"]=pfp_result
                         if old_pfp_id: delete_pfp_file(old_pfp_id)
                     else: errors.append("Profile picture is the same")
@@ -250,7 +256,7 @@ def channels_management(db:SQLite, id, channel_id):
         db.update_data("channels", update_data, {"id": channel_id})
 
         # Get updated channel data and emit event
-        updated_channel=db.select_data("channels", ["id", "name", "pfp", "type", "permissions"], {"id": channel_id})[0]
+        updated_channel=db.execute_raw_sql("SELECT id, name, pfp, type, permissions FROM channels WHERE id=?", (channel_id,))[0]
         channel_edited(channel_id, updated_channel, db)
 
         return jsonify({"updated_channel": updated_channel, "errors": errors, "success": True})
@@ -263,10 +269,10 @@ def channels_management(db:SQLite, id, channel_id):
             db.update_data("members", {"hidden": 1}, {"user_id": id, "channel_id": channel_id})
 
             # Get user data and emit member_leave event only to the user hiding the channel
-            user_data=db.select_data("users", ["id", "username", "display_name", "pfp"], {"id": id})[0]
+            user_data=db.execute_raw_sql("SELECT id, username, display_name, pfp FROM users WHERE id=?", (id,))[0]
 
             # For DM channels, only emit to the user who hid the channel, not to other members
-            user_event_data={k: v for k, v in user_data.items() if k != "id"}
+            user_event_data={k: v for k, v in user_data.items() if k!="id"}
             emit("member_leave", {
                 "channel_id": channel_id,
                 "user": user_event_data
@@ -276,8 +282,8 @@ def channels_management(db:SQLite, id, channel_id):
             user_permissions=perm_data["admin_member"][0]["permissions"]
             if has_permission(user_permissions, perm.owner, perm_data["channel_data"][0]["permissions"]):
                 if "delete" in request.args:
-                    channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
-                    if channel_pfp and channel_pfp[0]["pfp"]: delete_pfp_file(channel_pfp[0]["pfp"])
+                    channel_pfp_data=db.execute_raw_sql("SELECT pfp FROM channels WHERE id=?", (channel_id,))
+                    if channel_pfp_data and channel_pfp_data[0]["pfp"]: delete_pfp_file(channel_pfp_data[0]["pfp"])
 
                     # Get all channel members and emit member_leave events
                     channel_members=db.execute_raw_sql("""
@@ -301,7 +307,7 @@ def channels_management(db:SQLite, id, channel_id):
                     total_members=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE channel_id=?", (channel_id,))[0]["count"]
                     if total_members>1: return make_json_error(403, "Cannot leave as the last owner unless channel is empty")
             # Get user data before deletion for emit
-            user_data=db.select_data("users", ["id", "username", "display_name", "pfp"], {"id": id})[0]
+            user_data=db.execute_raw_sql("SELECT id, username, display_name, pfp FROM users WHERE id=?", (id,))[0]
 
             db.delete_data("members", {"user_id": id, "channel_id": channel_id})
 
@@ -313,8 +319,8 @@ def channels_management(db:SQLite, id, channel_id):
                 FROM members
                 WHERE channel_id=?
                 """, (channel_id,))[0]["count"]==0:
-                channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
-                if channel_pfp and channel_pfp[0]["pfp"]: delete_pfp_file(channel_pfp[0]["pfp"])
+                channel_pfp_data=db.execute_raw_sql("SELECT pfp FROM channels WHERE id=?", (channel_id,))
+                if channel_pfp_data and channel_pfp_data[0]["pfp"]: delete_pfp_file(channel_pfp_data[0]["pfp"])
 
                 # Emit channel deleted event
                 channel_deleted(channel_id, db)
@@ -326,15 +332,18 @@ def channels_management(db:SQLite, id, channel_id):
 @logged_in()
 @sliding_window_rate_limiter(limit=30, window=60, user_limit=15)
 def get_invite(db:SQLite, id, channel_id):
-    member_data=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
-    if not member_data: return make_json_error(404, "Channel not found")
-    channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-    if not channel_data: return make_json_error(404, "Channel not found")
-    if channel_data[0]["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
-    channel_permissions=channel_data[0]["permissions"]
-    if not has_permission(member_data[0]["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
-    existing_invite=db.select_data("channels", ["invite_code"], {"id": channel_id})
-    if existing_invite and existing_invite[0]["invite_code"]: return jsonify({"invite_code": existing_invite[0]["invite_code"], "success": True})
+    member_channel_data=db.execute_raw_sql("""
+        SELECT m.permissions, c.type, c.permissions as channel_permissions, c.invite_code
+        FROM members m
+        JOIN channels c ON m.channel_id=c.id
+        WHERE m.user_id=? AND m.channel_id=?
+    """, (id, channel_id))
+    if not member_channel_data: return make_json_error(404, "Channel not found")
+    data=member_channel_data[0]
+    if data["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
+    channel_permissions=data["channel_permissions"]
+    if not has_permission(data["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
+    if data["invite_code"]: return jsonify({"invite_code": data["invite_code"], "success": True})
     return jsonify({"invite_code": None, "success": True})
 
 @channels_bp.route("/channel/<string:channel_id>/invite", methods=["POST", "DELETE"])
@@ -343,13 +352,17 @@ def get_invite(db:SQLite, id, channel_id):
 @validate_request_data({"invite_code": {"optional": True, "minlen": 3, "maxlen": 20, "regex": re.compile(r"[a-zA-Z0-9_-]+")}})
 def manage_invite(db:SQLite, id, channel_id):
     if request.method=="POST":
-        member_data=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
-        if not member_data: return make_json_error(404, "Channel not found")
-        channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-        if not channel_data: return make_json_error(404, "Channel not found")
-        if channel_data[0]["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
-        channel_permissions=channel_data[0]["permissions"]
-        if not has_permission(member_data[0]["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
+        member_channel_data=db.execute_raw_sql("""
+            SELECT m.permissions, c.type, c.permissions as channel_permissions, c.invite_code
+            FROM members m
+            JOIN channels c ON m.channel_id=c.id
+            WHERE m.user_id=? AND m.channel_id=?
+        """, (id, channel_id))
+        if not member_channel_data: return make_json_error(404, "Channel not found")
+        data=member_channel_data[0]
+        if data["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
+        channel_permissions=data["channel_permissions"]
+        if not has_permission(data["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
         custom_code=request.form.get("invite_code", "").strip()
         if custom_code:
             existing_with_code=db.select_data("channels", ["id"], {"invite_code": custom_code})
@@ -357,17 +370,20 @@ def manage_invite(db:SQLite, id, channel_id):
             invite_code=custom_code
         else:
             invite_code=generate(8)
-        existing_invite=db.select_data("channels", ["invite_code"], {"id": channel_id})
         db.update_data("channels", {"invite_code": invite_code}, {"id": channel_id})
         return jsonify({"invite_code": invite_code, "success": True}), 201
     elif request.method=="DELETE":
-        member_data=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
-        if not member_data: return make_json_error(404, "Channel not found")
-        channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-        if not channel_data: return make_json_error(404, "Channel not found")
-        if channel_data[0]["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
-        channel_permissions=channel_data[0]["permissions"]
-        if not has_permission(member_data[0]["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
+        member_channel_data=db.execute_raw_sql("""
+            SELECT m.permissions, c.type, c.permissions as channel_permissions
+            FROM members m
+            JOIN channels c ON m.channel_id=c.id
+            WHERE m.user_id=? AND m.channel_id=?
+        """, (id, channel_id))
+        if not member_channel_data: return make_json_error(404, "Channel not found")
+        data=member_channel_data[0]
+        if data["type"]==1: return make_json_error(400, "Cannot manage invites for DM channels")
+        channel_permissions=data["channel_permissions"]
+        if not has_permission(data["permissions"], perm.manage_channel, channel_permissions): return make_json_error(403, "Channel management privileges required")
         db.update_data("channels", {"invite_code": None}, {"id": channel_id})
         return jsonify({"success": True})
 
@@ -399,12 +415,19 @@ def join_invite(db:SQLite, id, invite_code):
         if member_count>=config["max_members"]["encrypted_channels"]: return make_json_error(400, "Channel has reached maximum member limit")
     db.insert_data("members", {"user_id": id, "channel_id": channel_id, "joined_at": timestamp(), "message_seq": 0 if channel_type==3 else get_channel_last_message_seq(db, channel_id)})
 
-    # Get user data and emit member join event
-    user_data=db.select_data("users", ["id", "username", "display_name", "pfp"], {"id": id})[0]
+    # Get user and channel data and emit events
+    user_channel_data=db.execute_raw_sql("""
+        SELECT u.id, u.username, u.display_name, u.pfp,
+               c.name, c.pfp as channel_pfp, c.type, c.permissions,
+               COUNT(m.user_id) as member_count
+        FROM users u, channels c
+        LEFT JOIN members m ON c.id=m.channel_id
+        WHERE u.id=? AND c.id=?
+        GROUP BY c.id
+    """, (id, channel_id))[0]
+    user_data={"id": user_channel_data["id"], "username": user_channel_data["username"], "display_name": user_channel_data["display_name"], "pfp": user_channel_data["pfp"]}
+    full_channel_data={"id": channel_id, "name": user_channel_data["name"], "pfp": user_channel_data["channel_pfp"], "type": user_channel_data["type"], "permissions": user_channel_data["permissions"], "member_count": user_channel_data["member_count"]}
     member_join(channel_id, user_data, db)
-
-    # Get channel data and emit channel_added event
-    full_channel_data=db.execute_raw_sql("SELECT c.id, c.name, c.pfp, c.type, c.permissions, COUNT(m.user_id) as member_count FROM channels c LEFT JOIN members m ON c.id=m.channel_id WHERE c.id=? GROUP BY c.id", (channel_id,))[0]
     channel_added(id, full_channel_data, db)
 
     return jsonify({"channel_id": channel_id, "success": True})

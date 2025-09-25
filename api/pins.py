@@ -27,12 +27,12 @@ def get_pinned_messages(db:SQLite, id, channel_id):
             or has_permission(user_permissions, perm.manage_permissions, channel_permissions)
         )
     )
-    pagination = get_pagination_params()
+    pagination=get_pagination_params()
     if isinstance(pagination, tuple):
         return pagination
     page_size, offset = pagination["page_size"], pagination["offset"]
     if hide_author:
-        sql_parts = [
+        sql_parts=[
             "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
             "NULL AS user, ",
             "(SELECT json_group_array(json_object(",
@@ -48,7 +48,7 @@ def get_pinned_messages(db:SQLite, id, channel_id):
             "WHERE m.channel_id = ?"
         ]
     else:
-        sql_parts = [
+        sql_parts=[
             "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
             "json_object(",
             "  'username', u.username, ",
@@ -68,7 +68,7 @@ def get_pinned_messages(db:SQLite, id, channel_id):
             "JOIN message_pins mp ON m.id = mp.id ",
             "WHERE m.channel_id = ?"
         ]
-    params = [channel_id]
+    params=[channel_id]
     sql_parts.append("ORDER BY mp.seq DESC LIMIT ? OFFSET ?")
     params.extend([page_size, offset])
     pinned_messages=db.execute_raw_sql(" ".join(sql_parts), params)

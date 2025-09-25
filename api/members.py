@@ -73,8 +73,12 @@ def kick_member(db:SQLite, id, channel_id, target_username):
     if has_permission(target_permissions, perm.owner, channel_permissions): return make_json_error(403, "Cannot kick owners")
     if has_permission(target_permissions, perm.admin, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions): return make_json_error(403, "Cannot kick admins unless you are an owner")
 
-    # Get user data before deletion for emit
-    user_data=db.select_data("users", ["id", "username", "display_name", "pfp"], {"id": target_user_id})[0]
+    # Get user data and delete member in one transaction
+    user_data=db.execute_raw_sql("""
+        SELECT u.id, u.username, u.display_name, u.pfp
+        FROM users u
+        WHERE u.id=?
+    """, (target_user_id,))[0]
 
     db.delete_data("members", {"user_id": target_user_id, "channel_id": channel_id})
 

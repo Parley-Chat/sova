@@ -22,15 +22,19 @@ os.makedirs(config["data_dir"]["attachments"], exist_ok=True)
 @logged_in()
 @sliding_window_rate_limiter(limit=200, window=60, user_limit=100)
 def channel_messages(db:SQLite, id, channel_id):
-    member_data=db.select_data("members", ["permissions", "message_seq"], {"user_id": id, "channel_id": channel_id})
-    if not member_data: return make_json_error(404, "Channel not found")
-    channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-    if not channel_data: return make_json_error(404, "Channel not found")
-    user_permissions=member_data[0]["permissions"]
-    member_message_seq=member_data[0]["message_seq"]
-    channel_permissions=channel_data[0]["permissions"]
-    hide_author = (
-        channel_data[0]["type"] == 3 and not (
+    member_channel_data=db.execute_raw_sql("""
+        SELECT m.permissions, m.message_seq, c.type, c.permissions as channel_permissions
+        FROM members m
+        JOIN channels c ON m.channel_id=c.id
+        WHERE m.user_id=? AND m.channel_id=?
+    """, (id, channel_id))
+    if not member_channel_data: return make_json_error(404, "Channel not found")
+    data=member_channel_data[0]
+    user_permissions=data["permissions"]
+    member_message_seq=data["message_seq"]
+    channel_permissions=data["channel_permissions"]
+    hide_author=(
+        data["type"]==3 and not (
             has_permission(user_permissions, perm.send_messages, channel_permissions)
             or has_permission(user_permissions, perm.manage_members, channel_permissions)
             or has_permission(user_permissions, perm.manage_permissions, channel_permissions)
@@ -39,12 +43,12 @@ def channel_messages(db:SQLite, id, channel_id):
     limit=int(request.args.get("limit", 50))
     offset=int(request.args.get("offset", 0))
     before_messages=int(request.args.get("before_messages", 0))
-    if limit > 100: limit=100
-    if limit < 1: limit=1
-    if before_messages < 0: before_messages=0
-    if before_messages > 100: before_messages=100
+    if limit>100: limit=100
+    if limit<1: limit=1
+    if before_messages<0: before_messages=0
+    if before_messages>100: before_messages=100
     if hide_author:
-        sql_parts = [
+        sql_parts=[
             "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
             "NULL AS user, ",
             "(SELECT json_group_array(json_object(",
@@ -59,7 +63,7 @@ def channel_messages(db:SQLite, id, channel_id):
             "WHERE m.channel_id = ? AND m.seq > ?"
         ]
     else:
-        sql_parts = [
+        sql_parts=[
             "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
             "json_object(",
             "  'username', u.username, ",
@@ -120,20 +124,24 @@ def sending_messages(db:SQLite, id, channel_id):
     if (not files and not msg): return make_json_error(400, "content or files required")
     replied_to=request.form.get("replied_to")
     if replied_to and not db.exists("messages", {"id": replied_to, "channel_id": channel_id}): return make_json_error(400, "replied_to message not found in this channel")
-    member_permissions=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
-    if not member_permissions: return make_json_error(404, "Channel not found")
-    channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-    if not channel_data: return make_json_error(404, "Channel not found")
-    if channel_data[0]["type"]==1:
+    member_channel_data=db.execute_raw_sql("""
+        SELECT m.permissions, c.type, c.permissions as channel_permissions
+        FROM members m
+        JOIN channels c ON m.channel_id=c.id
+        WHERE m.user_id=? AND m.channel_id=?
+    """, (id, channel_id))
+    if not member_channel_data: return make_json_error(404, "Channel not found")
+    data=member_channel_data[0]
+    if data["type"]==1:
         other_member=db.execute_raw_sql("SELECT user_id FROM members WHERE channel_id=? AND user_id!=?", (channel_id, id))
         if other_member and db.exists("blocks", {"blocker_id": other_member[0]["user_id"], "blocked_id": id}): return make_json_error(403, "You are blocked by this user")
-    member_permissions=member_permissions[0]["permissions"]
-    channel_permissions=channel_data[0]["permissions"]
+    member_permissions=data["permissions"]
+    channel_permissions=data["channel_permissions"]
     if not has_permission(member_permissions, perm.send_messages, channel_permissions): return make_json_error(403, "No permission to send messages")
-    if len(msg)>(config["messages"]["max_message_length"] if channel_data[0]["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
+    if len(msg)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
     key=None
     iv=None
-    if channel_data[0]["type"]!=3:
+    if data["type"]!=3:
         if "key" not in request.form or "iv" not in request.form: return make_json_error(400, "key and iv is required in non-broadcast channels")
         key=request.form["key"]
         latest_user_key=db.execute_raw_sql(
@@ -175,7 +183,7 @@ def sending_messages(db:SQLite, id, channel_id):
             attachments.append({"id": file_id, "filename": file.filename, "size": file_info["size"], "mimetype": file_info["mimetype"]})
 
     # Get user data for the emit
-    user_data=db.execute_raw_sql("SELECT username, display_name AS display, pfp FROM users WHERE id=?", (id,))[0] if not (channel_data[0]["type"]==3 and not (has_permission(member_permissions, perm.send_messages, channel_permissions) or has_permission(member_permissions, perm.manage_members, channel_permissions) or has_permission(member_permissions, perm.manage_permissions, channel_permissions))) else None
+    user_data=db.execute_raw_sql("SELECT username, display_name AS display, pfp FROM users WHERE id=?", (id,))[0] if not (data["type"]==3 and not (has_permission(member_permissions, perm.send_messages, channel_permissions) or has_permission(member_permissions, perm.manage_members, channel_permissions) or has_permission(member_permissions, perm.manage_permissions, channel_permissions))) else None
     message_data={
         "id": message_id,
         "content": msg,
@@ -187,7 +195,7 @@ def sending_messages(db:SQLite, id, channel_id):
         "user": user_data,
         "attachments": attachments
     }
-    if channel_data[0]["type"]==1:
+    if data["type"]==1:
         current_member=db.select_data("members", ["hidden"], {"channel_id": channel_id, "user_id": id})
         if current_member and current_member[0]["hidden"]:
             db.update_data("members", {"hidden": None}, {"user_id": id, "channel_id": channel_id})
@@ -201,19 +209,23 @@ def sending_messages(db:SQLite, id, channel_id):
 @logged_in()
 @sliding_window_rate_limiter(limit=150, window=60, user_limit=75)
 def message_management(db:SQLite, id, channel_id, message_id):
-    message_data=db.select_data("messages", ["user_id", "channel_id"], {"id": message_id})
-    if not message_data: return make_json_error(404, "Message not found")
-    if message_data[0]["channel_id"]!=channel_id: return make_json_error(404, "Message not found")
+    message_channel_data=db.execute_raw_sql("""
+        SELECT m.user_id, m.channel_id, c.type, c.permissions as channel_permissions
+        FROM messages m
+        JOIN channels c ON m.channel_id=c.id
+        WHERE m.id=?
+    """, (message_id,))
+    if not message_channel_data: return make_json_error(404, "Message not found")
+    data=message_channel_data[0]
+    if data["channel_id"]!=channel_id: return make_json_error(404, "Message not found")
     if request.method=="PATCH":
         if not request.form.get("content"): return make_json_error(400, "content is required")
-        channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
-        if not channel_data: return make_json_error(404, "Channel not found")
-        if len(request.form["content"])>(config["messages"]["max_message_length"] if channel_data[0]["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
-        if message_data[0]["user_id"]!=id: return make_json_error(403, "Can only edit your own messages")
+        if len(request.form["content"])>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
+        if data["user_id"]!=id: return make_json_error(403, "Can only edit your own messages")
 
         update_fields={"content": request.form["content"], "edited_at": timestamp(True)}
 
-        if channel_data[0]["type"]!=3:
+        if data["type"]!=3:
             if "iv" not in request.form: return make_json_error(400, "iv is required in non-broadcast channels")
             if len(request.form["iv"])!=16: return make_json_error(400, "Invalid iv parameter, error: length")
             update_fields["iv"]=request.form["iv"]
@@ -234,12 +246,14 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         return jsonify({"success": True})
     elif request.method=="DELETE":
-        if message_data[0]["user_id"]!=id:
-            member_perms=db.select_data("members", ["permissions"], {"user_id": id, "channel_id": channel_id})
+        if data["user_id"]!=id:
+            member_perms=db.execute_raw_sql("""
+                SELECT m.permissions
+                FROM members m
+                WHERE m.user_id=? AND m.channel_id=?
+            """, (id, channel_id))
             if not member_perms: return make_json_error(404, "Channel not found")
-            channel_perms=db.select_data("channels", ["permissions"], {"id": channel_id})
-            if not channel_perms: return make_json_error(404, "Channel not found")
-            channel_permissions=channel_perms[0]["permissions"] if channel_perms else 0
+            channel_permissions=data["channel_permissions"]
             if not has_permission(member_perms[0]["permissions"], perm.manage_messages, channel_permissions): return make_json_error(403, "Can only delete your own messages or need manage messages permission")
         db.delete_data("messages", {"id": message_id})
         db.cleanup_unused_files()

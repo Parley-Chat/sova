@@ -36,9 +36,9 @@ def edit_me(db:SQLite, id):
         pfp_result=handle_pfp(error_as_text=True)
         if not isinstance(pfp_result, tuple):
             if pfp_result:
-                old_pfp=db.select_data("users", ["pfp"], {"id": id})
-                old_pfp_id=old_pfp[0]["pfp"] if old_pfp and old_pfp[0]["pfp"] else None
-                if old_pfp_id!=old_pfp:
+                old_pfp_data=db.execute_raw_sql("SELECT pfp FROM users WHERE id=?", (id,))
+                old_pfp_id=old_pfp_data[0]["pfp"] if old_pfp_data and old_pfp_data[0]["pfp"] else None
+                if old_pfp_id!=pfp_result:
                     update_data["pfp"]=pfp_result
                     if old_pfp_id: delete_pfp_file(old_pfp_id)
                 else: errors.append("Profile picture is the same")
@@ -128,12 +128,17 @@ def get_blocks(db:SQLite, id):
 @logged_in()
 @sliding_window_rate_limiter(limit=50, window=60, user_limit=20)
 def block_user(db:SQLite, id, username):
-    target_user=db.select_data("users", ["id"], {"username": username})
-    if not target_user: return make_json_error(404, "User not found")
-    target_user_id=target_user[0]["id"]
+    user_block_data=db.execute_raw_sql("""
+        SELECT u.id as target_user_id,
+               EXISTS(SELECT 1 FROM blocks WHERE blocker_id=? AND blocked_id=u.id) as already_blocked
+        FROM users u
+        WHERE u.username=?
+    """, (id, username))
+    if not user_block_data: return make_json_error(404, "User not found")
+    data=user_block_data[0]
+    target_user_id=data["target_user_id"]
     if id==target_user_id: return make_json_error(400, "Cannot block yourself")
-    existing_block=db.select_data("blocks", ["blocker_id"], {"blocker_id": id, "blocked_id": target_user_id})
-    if existing_block: return make_json_error(409, "User is already blocked")
+    if data["already_blocked"]: return make_json_error(409, "User is already blocked")
     db.insert_data("blocks", {"blocker_id": id, "blocked_id": target_user_id, "blocked_at": timestamp()})
     return jsonify({"success": True})
 
@@ -141,10 +146,15 @@ def block_user(db:SQLite, id, username):
 @logged_in()
 @sliding_window_rate_limiter(limit=50, window=60, user_limit=20)
 def unblock_user(db:SQLite, id, username):
-    target_user=db.select_data("users", ["id"], {"username": username})
-    if not target_user: return make_json_error(404, "User not found")
-    target_user_id=target_user[0]["id"]
-    existing_block=db.select_data("blocks", ["blocker_id"], {"blocker_id": id, "blocked_id": target_user_id})
-    if not existing_block: return make_json_error(404, "User is not blocked")
+    user_block_data=db.execute_raw_sql("""
+        SELECT u.id as target_user_id,
+               EXISTS(SELECT 1 FROM blocks WHERE blocker_id=? AND blocked_id=u.id) as is_blocked
+        FROM users u
+        WHERE u.username=?
+    """, (id, username))
+    if not user_block_data: return make_json_error(404, "User not found")
+    data=user_block_data[0]
+    target_user_id=data["target_user_id"]
+    if not data["is_blocked"]: return make_json_error(404, "User is not blocked")
     db.delete_data("blocks", {"blocker_id": id, "blocked_id": target_user_id})
     return jsonify({"success": True})

@@ -300,7 +300,7 @@ def member_join(channel_id, user_data, db):
     member_permissions=member_data[0]["permissions"] if member_data else None
 
     # Create user data without id for the event
-    user_event_data={k: v for k, v in user_data.items() if k != "id"}
+    user_event_data={k: v for k, v in user_data.items() if k!="id"}
 
     # Emit to users with manage permissions (include permissions data)
     channel_data=db.select_data("channels", ["type", "permissions"], {"id": channel_id})
@@ -347,7 +347,7 @@ def member_leave(channel_id, user_data, db):
     update_channel_keys_on_member_change(channel_id, db)
 
     # Create user data without id for the event
-    user_event_data={k: v for k, v in user_data.items() if k != "id"}
+    user_event_data={k: v for k, v in user_data.items() if k!="id"}
 
     _emit_member_event_with_channel_perms("member_leave", {
         "channel_id": channel_id,
@@ -370,7 +370,7 @@ def member_info_changed(user_id, user_data, db):
 
     if channel_ids:
         # Create user data without id for the event
-        user_event_data={k: v for k, v in user_data.items() if k != "id"}
+        user_event_data={k: v for k, v in user_data.items() if k!="id"}
 
         # Check if all channels are type 3
         all_type_3=all(row["type"]==3 for row in user_channels)
@@ -453,7 +453,7 @@ def dm_unhide(channel_id, user_id, db):
     channel_added(user_id, channel_data, db)
 
     # Emit member_join event only to the user who unhid the channel
-    user_event_data={k: v for k, v in current_user_data.items() if k != "id"}
+    user_event_data={k: v for k, v in current_user_data.items() if k!="id"}
     emit("member_join", {
         "channel_id": channel_id,
         "user": user_event_data

@@ -28,9 +28,9 @@ if config["version"]<version_data["config"]:
 
 dev_mode="--dev" in sys.argv or config["server"]["dev"]
 
-BLUE = "\033[34m"
-YELLOW = "\033[33m"
-RED = "\033[31m"
-RESET = "\033[0m"
+BLUE="\033[34m"
+YELLOW="\033[33m"
+RED="\033[31m"
+RESET="\033[0m"
 
 def colored_log(color, tag, text): print(f"{color}[{tag}]{RESET} {text}")

@@ -24,25 +24,39 @@ def index(): return {"running": "Parley", "version": version,
   **({"dev": True} if dev_mode else {})}, 200
 
 def join_invite(db, id, invite_code):
-    channel_data=db.select_data("channels", ["id", "type"], {"invite_code": invite_code})
-    if not channel_data: return "Instance invite not found"
-    channel_id=channel_data[0]["id"]
-    if db.exists("members", {"user_id": id, "channel_id": channel_id}): return "User is already a member of instance invite channel"
-    if db.exists("bans", {"user_id": id, "channel_id": channel_id}): return "User is banned from instance invite channel"
-    user_channel_count=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE user_id=? AND hidden IS NULL", (id,))[0]["count"]
-    if user_channel_count>=config["max_members"]["max_channels"]: return "User has reached the maximum number of channels"
-    channel_type=channel_data[0]["type"]
+    invite_data=db.execute_raw_sql("""
+        SELECT c.id, c.type,
+               EXISTS(SELECT 1 FROM members WHERE user_id=? AND channel_id=c.id) as is_member,
+               EXISTS(SELECT 1 FROM bans WHERE user_id=? AND channel_id=c.id) as is_banned,
+               (SELECT COUNT(*) FROM members WHERE user_id=? AND hidden IS NULL) as user_channel_count,
+               (SELECT COUNT(*) FROM members WHERE channel_id=c.id) as channel_member_count
+        FROM channels c
+        WHERE c.invite_code=?
+    """, (id, id, id, invite_code))
+    if not invite_data: return "Instance invite not found"
+    data=invite_data[0]
+    channel_id=data["id"]
+    if data["is_member"]: return "User is already a member of instance invite channel"
+    if data["is_banned"]: return "User is banned from instance invite channel"
+    if data["user_channel_count"]>=config["max_members"]["max_channels"]: return "User has reached the maximum number of channels"
+    channel_type=data["type"]
     if channel_type!=3:
-        member_count=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE channel_id=?", (channel_id,))[0]["count"]
-        if member_count>=config["max_members"]["encrypted_channels"]: return "Instance invite channel has reached maximum member limit"
+        if data["channel_member_count"]>=config["max_members"]["encrypted_channels"]: return "Instance invite channel has reached maximum member limit"
     db.insert_data("members", {"user_id": id, "channel_id": channel_id, "joined_at": timestamp(), "message_seq": 0 if channel_type==3 else get_channel_last_message_seq(db, channel_id)})
 
-    # Get user data and emit member join event
-    user_data=db.select_data("users", ["id", "username", "display_name", "pfp"], {"id": id})[0]
+    # Get user and channel data and emit events
+    user_channel_data=db.execute_raw_sql("""
+        SELECT u.id, u.username, u.display_name, u.pfp,
+               c.name, c.pfp as channel_pfp, c.type, c.permissions,
+               COUNT(m.user_id) as member_count
+        FROM users u, channels c
+        LEFT JOIN members m ON c.id=m.channel_id
+        WHERE u.id=? AND c.id=?
+        GROUP BY c.id
+    """, (id, channel_id))[0]
+    user_data={"id": user_channel_data["id"], "username": user_channel_data["username"], "display_name": user_channel_data["display_name"], "pfp": user_channel_data["pfp"]}
+    full_channel_data={"id": channel_id, "name": user_channel_data["name"], "pfp": user_channel_data["channel_pfp"], "type": user_channel_data["type"], "permissions": user_channel_data["permissions"], "member_count": user_channel_data["member_count"]}
     member_join(channel_id, user_data, db)
-
-    # Get channel data and emit channel_added event
-    full_channel_data=db.execute_raw_sql("SELECT c.id, c.name, c.pfp, c.type, c.permissions, COUNT(m.user_id) as member_count FROM channels c LEFT JOIN members m ON c.id=m.channel_id WHERE c.id=? GROUP BY c.id", (channel_id,))[0]
     channel_added(id, full_channel_data, db)
 
 @auth_bp.route("/solve", methods=["POST"])
@@ -95,14 +109,14 @@ def solve():
         new_passkey=generate()
         hashed_passkey=bcrypt.hashpw(new_passkey.encode(), bcrypt.gensalt()).decode()
         db.update_data("users", {"passkey": hashed_passkey}, {"id": user_id})
-        user_public=db.select_data("users", ["public_key"], {"id": user_id})[0]["public_key"]
+        user_public=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (user_id,))[0]["public_key"]
         public_key, error_resp=public_key_open(user_public)
         if error_resp: return error_resp
         id=user_id
     else:
-        public_key=db.select_data("users", ["public_key"], {"id": id})
-        if not public_key: return make_json_error(400, "User not found")
-        public_key, error_resp=public_key_open(public_key[0]["public_key"])
+        public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+        if not public_key_data: return make_json_error(400, "User not found")
+        public_key, error_resp=public_key_open(public_key_data[0]["public_key"])
         if error_resp: return error_resp
     if not reset_passkey:
         if "User-Agent" in request.headers:
@@ -167,9 +181,9 @@ def reset_keys(id):
 @validate_request_data({"public": {"len": 392}}, 401)
 @logged_in()
 def reset_passkey(db:SQLite, id):
-    user_public=db.select_data("users", ["public_key"], {"id": id})
-    if not user_public: return make_json_error(400, "User not found")
-    if request.form["public"]!=user_public[0]["public_key"]: return make_json_error(401, "Public key doesn't match")
+    user_public_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+    if not user_public_data: return make_json_error(400, "User not found")
+    if request.form["public"]!=user_public_data[0]["public_key"]: return make_json_error(401, "Public key doesn't match")
     public_key, error_resp=public_key_open()
     if error_resp: return error_resp
     id, challenge_hash, challenge_enc=get_challenge(public_key)
