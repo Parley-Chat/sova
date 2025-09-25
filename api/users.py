@@ -15,7 +15,7 @@ def me(db:SQLite, id):
     user_data=db.select_data("users", ["id", "username", "pfp", "display_name AS display"], {"id": id})[0]
     return jsonify({**user_data, "success": True})
 
-@users_bp.route("/me", methods=["DELETE"])
+@users_bp.route("/me/logout", methods=["DELETE"])
 @sliding_window_rate_limiter(limit=10, window=60, user_limit=5)
 @logged_in()
 def logout(db:SQLite, session_id):
