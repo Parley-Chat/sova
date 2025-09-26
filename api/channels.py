@@ -74,10 +74,7 @@ def channels(db:SQLite, id):
         LEFT JOIN messages last_msg ON last_msg.channel_id=c.id AND last_msg.seq=lm.last_seq
         LEFT JOIN users last_msg_user ON last_msg.user_id=last_msg_user.id
         WHERE m.user_id=? AND m.hidden IS NULL
-        ORDER BY
-            lm.last_ts DESC NULLS LAST,
-            m.joined_at ASC,
-            m.seq ASC
+        ORDER BY COALESCE(lm.last_ts, m.joined_at * 1000) DESC
     """, (id, id, id, id))
     for channel in user_channels:
         user_permissions=channel["permissions"]
