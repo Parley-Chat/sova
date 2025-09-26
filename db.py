@@ -363,8 +363,7 @@ class SQLite:
             """)
             if not unused_files: return
             file_ids=[f["id"] for f in unused_files]
-            placeholders=",".join(["?"] * len(file_ids))
-            self.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids)
+            self.execute(f"DELETE FROM files WHERE id IN ({",".join(["?"] * len(file_ids))})", file_ids)
         for file_record in unused_files:
             file_type=file_record["file_type"]
             if file_type=="attachment":
