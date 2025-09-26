@@ -34,14 +34,6 @@ def get_channel_last_message_seq(db: SQLite, channel_id: str) -> int:
     result=db.execute_raw_sql("SELECT MAX(seq) as last_seq FROM messages WHERE channel_id=?", (channel_id,))
     return result[0]["last_seq"] if result and result[0]["last_seq"] is not None else 0
 
-def delete_pfp_file(pfp):
-    if pfp:
-        db=SQLite()
-        try:
-            db.cleanup_unused_files()
-        finally:
-            db.close()
-
 def get_file_size_chunked(file, max_size, chunk_size=8192):
     """Get file size using chunked reading, stopping if max_size is exceeded"""
     file.stream.seek(0)

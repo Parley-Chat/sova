@@ -3,7 +3,7 @@ import json
 from flask import Blueprint, request, jsonify
 from .utils import (
     make_json_error, logged_in, sliding_window_rate_limiter, timestamp, handle_pfp,
-    delete_pfp_file, create_dm_id, perm, has_permission, validate_request_data,
+    create_dm_id, perm, has_permission, validate_request_data,
     check_user_channel_limit, get_channel_last_message_seq
 )
 from utils import generate
@@ -249,7 +249,7 @@ def channels_management(db:SQLite, id, channel_id):
                     old_pfp_id=old_pfp_data[0]["pfp"] if old_pfp_data and old_pfp_data[0]["pfp"] else None
                     if old_pfp_id!=pfp_result:
                         update_data["pfp"]=pfp_result
-                        if old_pfp_id: delete_pfp_file(old_pfp_id)
+                        if old_pfp_id: db.cleanup_unused_files()
                     else: errors.append("Profile picture is the same")
             else: errors.append(pfp_result[0])
         if not update_data: return jsonify({"error": "No valid parameters to update", "errors": errors, "success": False}), 400
@@ -283,7 +283,7 @@ def channels_management(db:SQLite, id, channel_id):
             if has_permission(user_permissions, perm.owner, perm_data["channel_data"][0]["permissions"]):
                 if "delete" in request.args:
                     channel_pfp_data=db.execute_raw_sql("SELECT pfp FROM channels WHERE id=?", (channel_id,))
-                    if channel_pfp_data and channel_pfp_data[0]["pfp"]: delete_pfp_file(channel_pfp_data[0]["pfp"])
+                    if channel_pfp_data and channel_pfp_data[0]["pfp"]: db.cleanup_unused_files()
 
                     # Get all channel members and emit member_leave events
                     channel_members=db.execute_raw_sql("""
@@ -320,7 +320,7 @@ def channels_management(db:SQLite, id, channel_id):
                 WHERE channel_id=?
                 """, (channel_id,))[0]["count"]==0:
                 channel_pfp_data=db.execute_raw_sql("SELECT pfp FROM channels WHERE id=?", (channel_id,))
-                if channel_pfp_data and channel_pfp_data[0]["pfp"]: delete_pfp_file(channel_pfp_data[0]["pfp"])
+                if channel_pfp_data and channel_pfp_data[0]["pfp"]: db.cleanup_unused_files()
 
                 # Emit channel deleted event
                 channel_deleted(channel_id, db)

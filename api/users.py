@@ -1,9 +1,9 @@
 from flask import Blueprint, request, jsonify
 from .utils import (
-    logged_in, sliding_window_rate_limiter, make_json_error, handle_pfp, delete_pfp_file,
+    logged_in, sliding_window_rate_limiter, make_json_error, handle_pfp,
     perm, has_permission, timestamp
 )
-from .stream import member_info_changed, member_leave
+from .stream import member_info_changed, member_leave, channel_deleted
 from db import SQLite
 
 users_bp=Blueprint("users", __name__)
@@ -40,7 +40,7 @@ def edit_me(db:SQLite, id):
                 old_pfp_id=old_pfp_data[0]["pfp"] if old_pfp_data and old_pfp_data[0]["pfp"] else None
                 if old_pfp_id!=pfp_result:
                     update_data["pfp"]=pfp_result
-                    if old_pfp_id: delete_pfp_file(old_pfp_id)
+                    if old_pfp_id: db.cleanup_unused_files()
                 else: errors.append("Profile picture is the same")
         else: errors.append(pfp_result[0])
     if not update_data: return jsonify({"error": "No valid parameters to update", "errors": errors, "success": False}), 400
@@ -59,31 +59,36 @@ def delete_account(db:SQLite, id):
     user_data=db.select_data("users", ["username", "display_name", "pfp"], {"id": id})[0]
     user_channels=db.execute_raw_sql("SELECT c.id, c.type, c.pfp, m.permissions, c.permissions as channel_permissions FROM channels c JOIN members m ON c.id=m.channel_id WHERE m.user_id=?", (id,))
     channels_to_delete=[]
+    dm_channels_to_delete=[]
     for channel in user_channels:
         channel_id=channel["id"]
         channel_type=channel["type"]
         user_permissions=channel["permissions"]
         channel_permissions=channel["channel_permissions"]
-        if channel_type==1: continue
+        if channel_type==1:
+            dm_channels_to_delete.append(channel_id)
+            continue
         if has_permission(user_permissions, perm.owner, channel_permissions):
             owner_count=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE channel_id=? AND (permissions & 2)=2", (channel_id,))[0]["count"]
             if owner_count==1:
                 total_members=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE channel_id=?", (channel_id,))[0]["count"]
                 if total_members>1:
-                    if "force" not in request.args:
-                        return make_json_error(403, "Cannot delete account as you are the last owner of non-empty channels, Use ?force to delete the channels")
+                    if "force" not in request.args: return make_json_error(403, "Cannot delete account as you are the last owner of non-empty channels, Use ?force to delete the channels")
                     channels_to_delete.append(channel_id)
     for channel in user_channels:
         channel_id=channel["id"]
         member_leave(channel_id, {"id": id, **user_data}, db)
-    if "force" in request.args:
-        for channel_id in channels_to_delete:
-            channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
-            if channel_pfp and channel_pfp[0]["pfp"]: delete_pfp_file(channel_pfp[0]["pfp"])
-            db.delete_data("channels", {"id": channel_id})
+    for channel_id in channels_to_delete:
+        channel_deleted(channel_id, db)
+        channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
+        if channel_pfp and channel_pfp[0]["pfp"]: db.cleanup_unused_files()
+        db.delete_data("channels", {"id": channel_id})
+    for channel_id in dm_channels_to_delete:
+        channel_deleted(channel_id, db)
+        db.delete_data("channels", {"id": channel_id})
     pfp=db.select_data("users", ["pfp"], {"id": id})
     db.delete_data("users", {"id": id})
-    if pfp and pfp[0]["pfp"]: delete_pfp_file(pfp[0]["pfp"])
+    if pfp and pfp[0]["pfp"]: db.cleanup_unused_files()
     db.cleanup_unused_files()
     db.cleanup_unused_keys()
     return jsonify({"success": True})

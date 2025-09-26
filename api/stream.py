@@ -209,46 +209,20 @@ def channel_edited(channel_id, channel_data, db):
 
 def channel_deleted(channel_id, db):
     """Emit channel deleted event and update users' channel_ids"""
-    # Get channel permissions before deletion and member permissions
-    channel_data=db.select_data("channels", ["permissions"], {"id": channel_id})
-    channel_permissions=channel_data[0]["permissions"] if channel_data else 0
+    member_data=db.execute_raw_sql("SELECT user_id FROM members WHERE channel_id=?", (channel_id,))
+    user_ids=[row["user_id"] for row in member_data]
 
-    member_data=db.execute_raw_sql("SELECT user_id, permissions FROM members WHERE channel_id=?", (channel_id,))
-
-    # Separate users with and without manage_permissions
-    manage_users=[]
-    regular_users=[]
-
-    for row in member_data:
-        user_id=row["user_id"]
-
-        if has_permission(row["permissions"], perm.manage_permissions, channel_permissions):
-            manage_users.append(user_id)
-        else:
-            regular_users.append(user_id)
-
-    # Emit with channel_permissions for users with manage_permissions
-    if manage_users:
-        emit("channel_deleted", {
-            "channel_id": channel_id,
-            "channel_permissions": channel_permissions
-        }, {
-            "user_id": manage_users
-        })
-
-    # Emit without channel_permissions for other users
-    if regular_users:
+    if user_ids:
         emit("channel_deleted", {
             "channel_id": channel_id
         }, {
-            "user_id": regular_users
+            "user_id": user_ids
         })
 
     # Update channel_ids for all affected users' streams
-    all_user_ids=manage_users+regular_users
     with streams_lock:
         for i, stream_data in streams.items():
-            if stream_data["user_id"] in all_user_ids:
+            if stream_data["user_id"] in user_ids:
                 with stream_data["lock"]:
                     if channel_id in stream_data["channel_ids"]:
                         stream_data["channel_ids"].remove(channel_id)
