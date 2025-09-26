@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
 from .utils import (
     logged_in, sliding_window_rate_limiter, make_json_error, handle_pfp,
-    perm, has_permission, timestamp
+    perm, has_permission, timestamp, hash_token, public_key_open, get_challenge,
+    challenges_lock, challenges
 )
 from .stream import member_info_changed, member_leave, channel_deleted
 from db import SQLite
@@ -11,7 +12,23 @@ users_bp=Blueprint("users", __name__)
 @users_bp.route("/me")
 @logged_in()
 @sliding_window_rate_limiter(limit=20, window=60, user_limit=10)
-def me(db:SQLite, id):
+def me(db:SQLite, id, session_token):
+    hashed_token=hash_token(session_token)
+    data=db.select_data("session", ["next_challenge"], {"token_hash": hashed_token})
+    if not data: return make_json_error(401, "Unauthorized")
+
+    if data[0]["next_challenge"]<=timestamp():
+        session_user_data=db.execute_raw_sql("SELECT u.public_key, s.logged_in_at FROM users u JOIN session s ON u.id=s.user WHERE s.token_hash=?", (hashed_token,))
+        if not session_user_data: return make_json_error(401, "Unauthorized")
+        session_user_data=session_user_data[0]
+        public_key, error_resp=public_key_open(session_user_data["public_key"])
+        if error_resp: return error_resp
+        logged_in_at=session_user_data["logged_in_at"]
+        challenge_id, challenge_hash, challenge_enc=get_challenge(public_key)
+        if not db.delete_data("session", {"token_hash": hashed_token}): return make_json_error(401, "Unauthorized")
+        with challenges_lock: challenges[challenge_id]={"id": id, "hashed": challenge_hash, "expire": timestamp()+60, "logged_in_at": logged_in_at}
+        return jsonify({"id": challenge_id, "challenge": challenge_enc, "success": False}), 419
+
     user_data=db.select_data("users", ["id", "username", "pfp", "display_name AS display"], {"id": id})[0]
     return jsonify({**user_data, "success": True})
 

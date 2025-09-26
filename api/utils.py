@@ -103,6 +103,7 @@ def logged_in(stream=False):
         parms=inspect.signature(f).parameters
         pass_id="id" in parms
         pass_session_id="session_id" in parms
+        pass_session_token="session_token" in parms
         do_pass_db="db" in parms
         @wraps(f)
         @pass_db
@@ -116,31 +117,14 @@ def logged_in(stream=False):
             kwargs_extra={}
             get=[]
             if pass_id: get.append("user")
-            if not stream: get.append("next_challenge")
             if pass_session_id: get.append("id")
             if get:
                 data=db.select_data("session", get, {"token_hash": hash_token(token)})
                 if not data: return make_json_error(401, "Unauthorized")
                 data=data[0]
-            if not stream and data["next_challenge"]<=timestamp():
-                if pass_id: user=data["user"]
-                else:
-                    user_data=db.select_data("session", ["user"], {"token_hash": hash_token(token)})
-                    if not user_data: return make_json_error(401, "Unauthorized")
-                    user=user_data[0]["user"]
-                public_key=db.select_data("users", ["public_key"], {"id": user})
-                if not public_key: return make_json_error(401, "Unauthorized")
-                public_key, error_resp=public_key_open(public_key[0]["public_key"])
-                if error_resp: return error_resp
-                logged_in_at=db.select_data("session", ["logged_in_at"], {"token_hash": hash_token(token)})
-                if not logged_in_at: return make_json_error(401, "Unauthorized")
-                logged_in_at=logged_in_at[0]["logged_in_at"]
-                id, challenge_hash, challenge_enc=get_challenge(public_key)
-                if not db.delete_data("session", {"token_hash": hash_token(token)}): return make_json_error(401, "Unauthorized")
-                with challenges_lock: challenges[id]={"id": user, "hashed": challenge_hash, "expire": timestamp()+60, "logged_in_at": logged_in_at}
-                return jsonify({"id": id, "challenge": challenge_enc, "success": False}), 419
             if pass_id: kwargs_extra["id"]=data["user"]
             if pass_session_id: kwargs_extra["session_id"]=data["id"]
+            if pass_session_token: kwargs_extra["session_token"]=token
             if do_pass_db: kwargs_extra["db"]=db
             else: db.close()
             try: return f(*args, **kwargs, **kwargs_extra)
