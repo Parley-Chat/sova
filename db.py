@@ -386,7 +386,7 @@ class SQLite:
             """, (math.floor(time.time()*1000),))
             self.execute("""
                 DELETE FROM channels_keys 
-                WHERE id NOT IN (SELECT DISTINCT key_id FROM channels_keys_info)
+                WHERE id NOT IN (SELECT key_id FROM channels_keys_info)
             """)
 
     def calculate_file_hash(self, file_path: str) -> str:
