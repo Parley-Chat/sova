@@ -7,6 +7,7 @@ from .stream import member_leave, member_perms_changed
 from db import SQLite
 
 members_bp=Blueprint("members", __name__)
+PERM_BITS=perm.mask.bit_length()
 
 @members_bp.route("/channel/<string:channel_id>/members")
 @logged_in()
@@ -70,10 +71,9 @@ def kick_member(db:SQLite, id, channel_id, target_username):
     if not has_permission(admin_permissions, perm.manage_members, channel_permissions): return make_json_error(403, "Member management privileges required")
     target_permissions=perm_data["target_member"][0]["permissions"]
     if id==target_user_id: return make_json_error(400, "Cannot kick yourself")
-    if has_permission(target_permissions, perm.owner, channel_permissions): return make_json_error(403, "Cannot kick owners")
+    if has_permission(target_permissions, perm.owner, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions): return make_json_error(403, "Cannot kick owners unless you are an owner")
     if has_permission(target_permissions, perm.admin, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions): return make_json_error(403, "Cannot kick admins unless you are an owner")
 
-    # Get user data and delete member in one transaction
     user_data=db.execute_raw_sql("""
         SELECT u.id, u.username, u.display_name, u.pfp
         FROM users u
@@ -94,8 +94,7 @@ def manage_members(db:SQLite, id, channel_id, target_username):
     new_permissions=request.get_json()
     if "permissions" not in new_permissions: return make_json_error(400, "permissions parameter is missing")
     new_permissions=new_permissions["permissions"]
-    if new_permissions is None: new_permissions=0
-    elif isinstance(new_permissions, int): new_permissions=new_permissions&perm.mask
+    if isinstance(new_permissions, int): new_permissions=new_permissions&perm.mask
     else: return make_json_error(400, "Invalid permissions format")
     perm_data=db.validate_user_action(id, channel_id, target_username)
     if not perm_data["admin_member"]: return make_json_error(404, "Channel not found")
@@ -110,27 +109,26 @@ def manage_members(db:SQLite, id, channel_id, target_username):
     if not has_permission(admin_permissions, perm.manage_permissions, channel_permissions):
         return make_json_error(403, "Insufficient permissions")
     target_permissions=perm_data["target_member"][0]["permissions"]
+    if not has_permission(admin_permissions, perm.owner, channel_permissions):
+        for bit in range(PERM_BITS):
+            permission_bit=1<<bit
+            if (new_permissions&permission_bit) and not has_permission(admin_permissions, permission_bit, channel_permissions):
+                return make_json_error(403, "Cannot assign permissions you don't have")
     if id==target_user_id:
         if has_permission(target_permissions, perm.owner, channel_permissions):
-            if has_permission(new_permissions, perm.owner, channel_permissions):
+            if not has_permission(new_permissions, perm.owner, channel_permissions):
                 cursor=db.execute("""
                     UPDATE members 
                     SET permissions = ?
                     WHERE channel_id = ? AND user_id = ? 
                     AND (SELECT COUNT(*) FROM members WHERE channel_id = ? AND (permissions & 1) = 1) > 1
                 """, (new_permissions, channel_id, target_user_id, channel_id))
-                if cursor.rowcount==0:
-                    return make_json_error(403, "Cannot remove owner permission as the last owner")
+                if cursor.rowcount==0: return make_json_error(403, "Cannot remove owner permission as the last owner")
                 db.commit()
-            else:
-                db.update_data("members", {"permissions": new_permissions}, {"user_id": target_user_id, "channel_id": channel_id})
-        else:
-            db.update_data("members", {"permissions": new_permissions}, {"user_id": target_user_id, "channel_id": channel_id})
+        db.update_data("members", {"permissions": new_permissions}, {"user_id": target_user_id, "channel_id": channel_id})
     else:
-        if has_permission(target_permissions, perm.owner, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions):
-            return make_json_error(403, "Permission of owners can't be changed by anyone")
-        if has_permission(target_permissions, perm.owner, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions):
-            return make_json_error(403, "Only owners can modify admins")
+        if has_permission(target_permissions, perm.owner, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions): return make_json_error(403, "Only owners can modify other owners")
+        if has_permission(target_permissions, perm.admin, channel_permissions) and not has_permission(admin_permissions, perm.owner, channel_permissions): return make_json_error(403, "Only owners can modify admins")
         db.update_data("members", {"permissions": new_permissions}, {"user_id": target_user_id, "channel_id": channel_id})
     member_perms_changed(channel_id, target_user_id, target_username, new_permissions, db)
     return jsonify({"success": True})
