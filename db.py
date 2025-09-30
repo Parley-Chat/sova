@@ -12,10 +12,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger=logging.getLogger(__name__)
 
 class SQLite:
-    def __init__(self, db_path: str=config["data_dir"]["database"], default_id_col: str='id', default_timestamp_col: str='timestamp'):
+    def __init__(self, db_path: str=config["data_dir"]["database"]):
         self.db_path=db_path
-        self.default_id_col=default_id_col
-        self.default_timestamp_col=default_timestamp_col
         self._conn: Optional[sqlite3.Connection]=None
         self._cursor: Optional[sqlite3.Cursor]=None
         self._in_context: bool=False
