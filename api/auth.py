@@ -71,14 +71,10 @@ def solve():
         hashed_challenge=challenges[request.form["id"]]["hashed"]
         logged_in_at=challenges[request.form["id"]].get("logged_in_at")
         new="new" in challenges[request.form["id"]]
-        reset_keys="reset_keys" in challenges[request.form["id"]]
         reset_passkey="reset_passkey" in challenges[request.form["id"]]
         if new:
             public_key_text=challenges[request.form["id"]]["public"]
             username=challenges[request.form["id"]]["username"]
-        elif reset_keys:
-            user_id=challenges[request.form["id"]]["user_id"]
-            public_key_text=challenges[request.form["id"]]["public"]
         elif reset_passkey:
             user_id=challenges[request.form["id"]]["user_id"]
         else: id=challenges[request.form["id"]]["id"]
@@ -99,12 +95,6 @@ def solve():
         if config["instance"]["invite"]:
             invite_error=join_invite(db, id, config["instance"]["invite"])
             if invite_error: colored_log(RED, "ERROR", invite_error)
-    elif reset_keys:
-        public_key, error_resp=public_key_open(public_key_text)
-        if error_resp: return error_resp
-        id=user_id
-        db.update_data("users", {"public_key": public_key_text}, {"id": user_id})
-        db.delete_data("session", {"user": user_id})
     elif reset_passkey:
         new_passkey=generate()
         hashed_passkey=bcrypt.hashpw(new_passkey.encode(), bcrypt.gensalt()).decode()
