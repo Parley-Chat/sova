@@ -273,6 +273,6 @@ def get_pagination_params():
     return {"page": page, "page_size": page_size, "offset": offset}
 
 def process_cors_headers(resp):
-    resp.headers["Access-Control-Allow-Headers"]="Access-Control-Allow-Headers: Accept, Accept-Encoding, Accept-Language, Authorization, Cache-Control, Connection, Content-Type, Host, Origin, Range, Referer, User-Agent"
+    resp.headers["Access-Control-Allow-Headers"]="Accept, Accept-Encoding, Accept-Language, Authorization, Cache-Control, Connection, Content-Type, Host, Origin, Range, Referer, User-Agent"
     resp.headers["Access-Control-Allow-Methods"]="GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
     resp.headers["Access-Control-Allow-Origin"]="*"
