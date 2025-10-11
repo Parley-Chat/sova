@@ -123,7 +123,7 @@ def solve():
             browser=regex_first_group_encrypted(browser_regex.search(request.headers["User-Agent"]), public_key)
             device=regex_first_group_encrypted(device_regex.search(request.headers["User-Agent"]), public_key)
         else: browser=device=None
-        session=generate()
+        session=generate(50)
         db.insert_data("session", {"user": id, "token_hash": hash_token(session), "id": generate(), "browser": browser, "device": device, "logged_in_at": logged_in_at or timestamp(), "next_challenge": timestamp()+3600})
     db.close()
     if reset_passkey: return jsonify({"passkey": new_passkey, "success": True})
@@ -163,17 +163,6 @@ def login(db:SQLite):
     id, challenge_hash, challenge_enc=get_challenge(public_key)
     id=generate()
     with challenges_lock: challenges[id]={"id": user[0]["id"], "hashed": challenge_hash, "expire": timestamp()+60}
-    return jsonify({"id": id, "challenge": challenge_enc, "success": True})
-
-@auth_bp.route("/reset-keys", methods=["POST"])
-@sliding_window_rate_limiter(limit=10, window=600, user_limit=5)
-@validate_request_data({"public": {"len": 392}}, 401)
-@logged_in()
-def reset_keys(id):
-    public_key, error_resp=public_key_open()
-    if error_resp: return error_resp
-    id, challenge_hash, challenge_enc=get_challenge(public_key)
-    with challenges_lock: challenges[id]={"reset_keys": True, "user_id": id, "hashed": challenge_hash, "expire": timestamp()+60, "public": request.form["public"]}
     return jsonify({"id": id, "challenge": challenge_enc, "success": True})
 
 @auth_bp.route("/reset-passkey", methods=["POST"])
