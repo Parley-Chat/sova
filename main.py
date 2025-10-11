@@ -119,7 +119,10 @@ def api_index():
 def serve_pfp(db:SQLite, pfp:str):
     pfp_data=db.select_data("files", ["id", "mimetype"], {"id": pfp, "file_type": "pfp"})
     if not pfp_data: abort(404)
-    try: return send_from_directory(config["data_dir"]["pfps"], f"{pfp_data[0]["id"]}.webp", mimetype=pfp_data[0]["mimetype"], as_attachment=False)
+    try:
+        resp=send_from_directory(config["data_dir"]["pfps"], f"{pfp_data[0]["id"]}.webp", mimetype=pfp_data[0]["mimetype"], as_attachment=False)
+        process_cors_headers(resp)
+        return resp
     except:
         db.cleanup_unused_files()
         abort(404)
@@ -130,7 +133,10 @@ def serve_attachment(db:SQLite, file_id:str):
     file_data=db.select_data("files", ["id", "filename", "mimetype"], {"id": file_id, "file_type": "attachment"})
     if not file_data: abort(404)
     filename=file_data[0]["filename"] or "attachment"
-    try: return send_from_directory(config["data_dir"]["attachments"], file_data[0]["id"], mimetype=file_data[0]["mimetype"], as_attachment=True, download_name=filename)
+    try:
+        resp=send_from_directory(config["data_dir"]["attachments"], file_data[0]["id"], mimetype=file_data[0]["mimetype"], as_attachment=True, download_name=filename)
+        process_cors_headers(resp)
+        return resp
     except:
         db.cleanup_unused_files()
         abort(404)
