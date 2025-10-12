@@ -20,7 +20,7 @@ def index(): return {"running": "Parley", "version": version,
   "max_file_size": config["max_file_size"], "messages": config["messages"],
   "disable_channel_creation": config["instance"]["disable_channel_creation"],
   "disable_channel_deletion": config["instance"]["disable_channel_deletion"],
-  "max_channels": config["max_members"]["max_channels"],
+  "max_channels": config["max_members"]["max_channels"], "password_protected": bool(config["instance"]["password"]),
   **({"dev": True} if dev_mode else {})}, 200
 
 def join_invite(db, id, invite_code):
@@ -130,6 +130,9 @@ def username_check(db:SQLite): return make_json_error(400, "Username is in use")
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20, "regex": re.compile(r"[a-z0-9_\-]+")}, "public": {"len": 392}}, 401)
 @pass_db
 def signup(db:SQLite):
+    if config["instance"]["password"]:
+        if "password" not in request.form: return make_json_error(401, "Password required")
+        if request.form["password"]!=config["instance"]["password"]: return make_json_error(401, "Password incorrect")
     if db.exists("users", {"username": request.form["username"]}): return make_json_error(400, "Username is in use")
     db.close()
     public_key, error_resp=public_key_open()
@@ -139,7 +142,7 @@ def signup(db:SQLite):
     return jsonify({"id": id, "challenge": challenge_enc, "success": True})
 
 @auth_bp.route("/login", methods=["POST"])
-@sliding_window_rate_limiter(limit=30, window=300, user_limit=15)
+@sliding_window_rate_limiter(limit=10, window=300)
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20}, "passkey": {"len": 20}, "public": {"len": 392}}, 401)
 @pass_db
 def login(db:SQLite):
