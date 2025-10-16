@@ -200,6 +200,11 @@ def sending_messages(db:SQLite, id, channel_id):
         if current_member and current_member[0]["hidden"]:
             db.update_data("members", {"hidden": None}, {"user_id": id, "channel_id": channel_id})
             dm_unhide(channel_id, id, db)
+        other_member=db.execute_raw_sql("SELECT user_id, hidden FROM members WHERE channel_id=? AND user_id!=?", (channel_id, id))
+        if other_member and other_member[0]["hidden"]:
+            other_user_id=other_member[0]["user_id"]
+            db.update_data("members", {"hidden": None}, {"user_id": other_user_id, "channel_id": channel_id})
+            dm_unhide(channel_id, other_user_id, db)
 
     message_sent(channel_id, message_data, id, db)
 
