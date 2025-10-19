@@ -43,7 +43,7 @@ with SQLite() as db:
     db.create_index("channels_keys_info", "channel_id")
     db.create_index("message_reads", "user_id")
     db.create_index("message_reads", "channel_id")
-    db.execute_raw_sql(f"PRAGMA user_version={db_version};")
+    if db.execute_raw_sql("PRAGMA user_version;")[0]["user_version"]!=db_version: db.execute_raw_sql(f"PRAGMA user_version={db_version};")
 
 uri_prefix="/"+config["uri_prefix"] if config["uri_prefix"] else ""
 def route_rule(rule: str): return uri_prefix+rule
