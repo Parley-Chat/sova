@@ -120,13 +120,13 @@ def solve():
     return jsonify({"session": session, "success": True, **(({"passkey": passkey} if new else {}))})
 
 @auth_bp.route("/username_check")
-@sliding_window_rate_limiter(limit=50, window=60, user_limit=20)
+@sliding_window_rate_limiter(limit=50, window=60)
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20, "regex": re.compile(r"[a-z0-9_\-]+")}}, source="args")
 @pass_db
 def username_check(db:SQLite): return make_json_error(400, "Username is in use") if db.exists("users", {"username": request.args["username"]}) else jsonify({"success": True})
 
 @auth_bp.route("/signup", methods=["POST"])
-@sliding_window_rate_limiter(limit=15, window=300, user_limit=5)
+@sliding_window_rate_limiter(limit=15, window=300)
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20, "regex": re.compile(r"[a-z0-9_\-]+")}, "public": {"len": 392}}, 401)
 @pass_db
 def signup(db:SQLite):
