@@ -131,8 +131,8 @@ def username_check(db:SQLite): return make_json_error(400, "Username is in use")
 @pass_db
 def signup(db:SQLite):
     if config["instance"]["password"]:
-        if "password" not in request.form: return make_json_error(401, "Password required")
-        if request.form["password"]!=config["instance"]["password"]: return make_json_error(401, "Password incorrect")
+        if "password" not in request.form: return make_json_error(403, "Password required")
+        if request.form["password"]!=config["instance"]["password"]: return make_json_error(403, "Password incorrect")
     if db.exists("users", {"username": request.form["username"]}): return make_json_error(400, "Username is in use")
     db.close()
     public_key, error_resp=public_key_open()
