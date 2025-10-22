@@ -126,7 +126,7 @@ def solve():
 def username_check(db:SQLite): return make_json_error(400, "Username is in use") if db.exists("users", {"username": request.args["username"]}) else jsonify({"success": True})
 
 @auth_bp.route("/signup", methods=["POST"])
-@sliding_window_rate_limiter(limit=15, window=300)
+@sliding_window_rate_limiter(limit=10, window=120)
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20, "regex": re.compile(r"[a-z0-9_\-]+")}, "public": {"len": 392}}, 401)
 @pass_db
 def signup(db:SQLite):
@@ -142,7 +142,7 @@ def signup(db:SQLite):
     return jsonify({"id": id, "challenge": challenge_enc, "success": True})
 
 @auth_bp.route("/login", methods=["POST"])
-@sliding_window_rate_limiter(limit=10, window=300)
+@sliding_window_rate_limiter(limit=20, window=120)
 @validate_request_data({"username": {"minlen": 3, "maxlen": 20}, "passkey": {"len": 20}, "public": {"len": 392}}, 401)
 @pass_db
 def login(db:SQLite):
