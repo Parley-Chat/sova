@@ -84,23 +84,57 @@ def delete_user(username):
     channels_count=channels_query.fetchone()["count"]
     messages_query=db.execute("SELECT COUNT(*) as count FROM messages WHERE user_id=?", (user_id,))
     messages_count=messages_query.fetchone()["count"]
+    owned_channels_query=db.execute("SELECT COUNT(*) as count FROM members m JOIN channels c ON m.channel_id=c.id WHERE m.user_id=? AND (m.permissions & 2)=2 AND c.type!=1", (user_id,))
+    owned_channels_count=owned_channels_query.fetchone()["count"]
     db.close()
     panel_content=f"""[bold]User ID:[/bold] {user['id']}
 [bold]Username:[/bold] {user['username']}
 [bold]Display Name:[/bold] {user['display_name'] or '-'}
 [bold]Channels:[/bold] {channels_count}
+[bold]Owned Channels:[/bold] {owned_channels_count}
 [bold]Messages:[/bold] {messages_count}
 [bold]Created At:[/bold] {format_timestamp(user['created_at'])}"""
     console.print(Panel(panel_content, title="User Information", border_style="yellow"))
+    if owned_channels_count>0:
+        console.print(f"[yellow]Warning: User owns {owned_channels_count} channel(s). These will be deleted if user is the last owner.[/yellow]")
     if not Confirm.ask(f"[bold red]Are you sure you want to delete user '{username}'?[/bold red]"):
         console.print("[yellow]Deletion cancelled.[/yellow]")
         return
     try:
         with SQLite() as db:
-            db.delete_data("users", {"username": username})
+            user_channels=db.execute_raw_sql("SELECT c.id, c.type, c.pfp, m.permissions, c.permissions as channel_permissions FROM channels c JOIN members m ON c.id=m.channel_id WHERE m.user_id=?", (user_id,))
+            channels_to_delete=[]
+            dm_channels_to_delete=[]
+            for channel in user_channels:
+                channel_id=channel["id"]
+                channel_type=channel["type"]
+                user_permissions=channel["permissions"]
+                channel_permissions=channel["channel_permissions"]
+                if channel_type==1:
+                    dm_channels_to_delete.append(channel_id)
+                    continue
+                if (user_permissions is not None and (user_permissions & 2)==2) or (user_permissions is None and (channel_permissions & 2)==2):
+                    owner_count=db.execute_raw_sql("SELECT COUNT(*) as count FROM members WHERE channel_id=? AND (permissions & 2)=2", (channel_id,))[0]["count"]
+                    if owner_count==1:
+                        channels_to_delete.append(channel_id)
+            for channel_id in channels_to_delete:
+                channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
+                db.delete_data("channels", {"id": channel_id})
+                if channel_pfp and channel_pfp[0]["pfp"]:
+                    db.cleanup_unused_files()
+            for channel_id in dm_channels_to_delete:
+                db.delete_data("channels", {"id": channel_id})
+            pfp=db.select_data("users", ["pfp"], {"id": user_id})
+            db.delete_data("users", {"id": user_id})
+            if pfp and pfp[0]["pfp"]:
+                db.cleanup_unused_files()
             db.cleanup_unused_files()
             db.cleanup_unused_keys()
         console.print(f"[green]✓ User '{username}' has been successfully deleted.[/green]")
+        if channels_to_delete:
+            console.print(f"[green]✓ Deleted {len(channels_to_delete)} owned channel(s).[/green]")
+        if dm_channels_to_delete:
+            console.print(f"[green]✓ Deleted {len(dm_channels_to_delete)} DM channel(s).[/green]")
     except Exception as e:
         console.print(f"[red]✗ Error deleting user: {e}[/red]")
 
