@@ -47,11 +47,16 @@ def delete_channel(channel_id):
         db.close()
         return
     channel=channel_data[0]
+    channel_type=channel["type"]
     members_count_query=db.execute("SELECT COUNT(*) as count FROM members WHERE channel_id=?", (channel_id,))
     members_count=members_count_query.fetchone()["count"]
     messages_count_query=db.execute("SELECT COUNT(*) as count FROM messages WHERE channel_id=?", (channel_id,))
     messages_count=messages_count_query.fetchone()["count"]
     db.close()
+    if channel_type==1:
+        console.print(f"[yellow]Warning: This is a DM channel. DM channels cannot be deleted, only hidden by users.[/yellow]")
+        console.print(f"[yellow]Use delete-user command to remove users and their DM channels instead.[/yellow]")
+        return
     panel_content=f"""[bold]Channel ID:[/bold] {channel['id']}
 [bold]Name:[/bold] {channel['name'] or '(DM Channel)'}
 [bold]Type:[/bold] {['', 'DM', 'Group', 'Announcement'][channel['type']]}
@@ -64,7 +69,10 @@ def delete_channel(channel_id):
         return
     try:
         with SQLite() as db:
+            channel_pfp=db.select_data("channels", ["pfp"], {"id": channel_id})
             db.delete_data("channels", {"id": channel_id})
+            if channel_pfp and channel_pfp[0]["pfp"]:
+                db.cleanup_unused_files()
             db.cleanup_unused_files()
             db.cleanup_unused_keys()
         console.print(f"[green]✓ Channel '{channel_id}' has been successfully deleted.[/green]")
