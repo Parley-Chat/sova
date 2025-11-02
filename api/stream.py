@@ -490,4 +490,5 @@ def stream(db:SQLite, session_id, id):
                 del streams[client]
 
     resp=Response(stream_with_context(generator()), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
     return resp
