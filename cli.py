@@ -14,7 +14,7 @@ console=Console()
 
 def format_timestamp(timestamp):
     if timestamp:
-        return datetime.fromtimestamp(timestamp/1000).strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
     return "N/A"
 
 def list_users(page=1, per_page=20):
