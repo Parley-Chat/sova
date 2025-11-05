@@ -352,7 +352,7 @@ class SQLite:
 
     def cleanup_unused_files(self) -> int:
         """Remove files that are no longer referenced by any messages, users, or channels"""
-        with self:
+        if self._in_context:
             unused_files=self.execute_raw_sql("""
                 SELECT f.id, f.file_type FROM files f
                 WHERE f.id NOT IN (SELECT file_id FROM attachment_message WHERE file_id IS NOT NULL)
@@ -362,6 +362,17 @@ class SQLite:
             if not unused_files: return
             file_ids=[f["id"] for f in unused_files]
             self.execute(f"DELETE FROM files WHERE id IN ({",".join(["?"] * len(file_ids))})", file_ids)
+        else:
+            with self:
+                unused_files=self.execute_raw_sql("""
+                    SELECT f.id, f.file_type FROM files f
+                    WHERE f.id NOT IN (SELECT file_id FROM attachment_message WHERE file_id IS NOT NULL)
+                    AND f.id NOT IN (SELECT pfp FROM users WHERE pfp IS NOT NULL)
+                    AND f.id NOT IN (SELECT pfp FROM channels WHERE pfp IS NOT NULL)
+                """)
+                if not unused_files: return
+                file_ids=[f["id"] for f in unused_files]
+                self.execute(f"DELETE FROM files WHERE id IN ({",".join(["?"] * len(file_ids))})", file_ids)
         for file_record in unused_files:
             file_type=file_record["file_type"]
             if file_type=="attachment":
@@ -376,16 +387,27 @@ class SQLite:
 
     def cleanup_unused_keys(self):
         """Remove keys that are no longer referenced by any messages"""
-        with self:
+        if self._in_context:
             self.execute("""
-                DELETE FROM channels_keys_info 
+                DELETE FROM channels_keys_info
                 WHERE key_id NOT IN (SELECT DISTINCT key FROM messages WHERE key IS NOT NULL)
                 AND expires_at < ?
             """, (math.floor(time.time()*1000),))
             self.execute("""
-                DELETE FROM channels_keys 
+                DELETE FROM channels_keys
                 WHERE id NOT IN (SELECT key_id FROM channels_keys_info)
             """)
+        else:
+            with self:
+                self.execute("""
+                    DELETE FROM channels_keys_info
+                    WHERE key_id NOT IN (SELECT DISTINCT key FROM messages WHERE key IS NOT NULL)
+                    AND expires_at < ?
+                """, (math.floor(time.time()*1000),))
+                self.execute("""
+                    DELETE FROM channels_keys
+                    WHERE id NOT IN (SELECT key_id FROM channels_keys_info)
+                """)
 
     def calculate_file_hash(self, file_path: str) -> str:
         """Calculate SHA256 hash of a file"""
