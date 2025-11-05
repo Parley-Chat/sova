@@ -19,7 +19,7 @@ channels_bp=Blueprint("channels", __name__)
 def channels(db:SQLite, id):
     user_channels=db.execute_raw_sql("""
         SELECT c.id, c.type,
-               CASE WHEN c.type=1 THEN other_u.username ELSE c.name END as name,
+               CASE WHEN c.type=1 THEN COALESCE(other_u.display_name, other_u.username) ELSE c.name END as name,
                CASE WHEN c.type=1 THEN other_u.pfp ELSE c.pfp END as pfp,
                CASE WHEN m.permissions IS NULL THEN c.permissions ELSE m.permissions END as permissions,
                c.permissions as channel_permissions,
@@ -156,7 +156,7 @@ def channel_creation(db:SQLite, id):
 
             channel_data={
                 "id": channel_id,
-                "name": target_user_data["username"],  # For DM, name is the other user's username
+                "name": target_user_data["display_name"] if target_user_data["display_name"] else target_user_data["username"],
                 "pfp": target_user_data["pfp"],
                 "type": 1,
                 "permissions": perm.send_messages,
@@ -166,9 +166,9 @@ def channel_creation(db:SQLite, id):
             # Emit to both users
             channel_added(id, channel_data, db)
 
-            # For the target user, the channel name should be current user's username
+            # For the target user, the channel name should be current user's display_name or username
             target_channel_data=channel_data.copy()
-            target_channel_data["name"]=current_user_data["username"]
+            target_channel_data["name"]=current_user_data["display_name"] if current_user_data["display_name"] else current_user_data["username"]
             target_channel_data["pfp"]=current_user_data["pfp"]
             channel_added(target_id, target_channel_data, db)
 
