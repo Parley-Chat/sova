@@ -79,6 +79,8 @@ def message_sent(channel_id, message_data, user_id, db):
         if regular_users:
             message_data_no_author=dict(message_data)
             message_data_no_author["user"]=None
+            message_data_no_author["signature"]=None
+            message_data_no_author["signed_timestamp"]=None
             emit("message_sent", {
                 "channel_id": channel_id,
                 "message": message_data_no_author
@@ -130,6 +132,8 @@ def message_edited(channel_id, message_data, user_id, db):
         if regular_users:
             message_data_no_author=dict(message_data)
             message_data_no_author["user"]=None
+            message_data_no_author["signature"]=None
+            message_data_no_author["signed_timestamp"]=None
             emit("message_edited", {
                 "channel_id": channel_id,
                 "message": message_data_no_author

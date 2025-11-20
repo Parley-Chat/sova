@@ -42,6 +42,8 @@ def channels(db:SQLite, id):
                        'iv', last_msg.iv,
                        'timestamp', last_msg.timestamp,
                        'edited_at', last_msg.edited_at,
+                       'signature', last_msg.signature,
+                       'signed_timestamp', last_msg.signed_timestamp,
                        'user',
                            json_object(
                                'username', last_msg_user.username,
@@ -84,6 +86,8 @@ def channels(db:SQLite, id):
             last_message_data=json.loads(channel["last_message"])
             if hide_author:
                 last_message_data["user"]=None
+                last_message_data["signature"]=None
+                last_message_data["signed_timestamp"]=None
             channel["last_message"]=last_message_data
         if not has_permission(user_permissions, perm.manage_permissions, channel_permissions):
             del channel["channel_permissions"]

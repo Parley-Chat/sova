@@ -179,6 +179,13 @@ def public_key_open(public_key_base64=None):
 
 def rsa_encrypt(public_key, plaintext): return base64.b64encode(public_key.encrypt(plaintext[:100].encode(), rsa_padding)).decode()
 
+def rsa_verify_signature(public_key, signature_base64, data):
+    try:
+        signature=base64.b64decode(signature_base64)
+        public_key.verify(signature, data.encode(), padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+        return True
+    except: return False
+
 def get_challenge(public_key):
     challenge=generate()
     return generate(), bcrypt.hashpw(challenge.encode(), bcrypt.gensalt()).decode(), rsa_encrypt(public_key, challenge)
