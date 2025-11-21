@@ -22,12 +22,20 @@ def members(db:SQLite, id, channel_id):
     if channel_data[0]["type"]==3 and not (has_permission(user_permissions, perm.manage_members, channel_permissions) or has_permission(user_permissions, perm.manage_permissions, channel_permissions)): return make_json_error(403, "You don't have permission to view members")
     pb_mode="pb" in request.args
     if pb_mode:
-        channel_members=db.execute_raw_sql("""
-            SELECT u.username, u.public_key AS public
-            FROM users u
-            JOIN members m ON u.id=m.user_id
-            WHERE m.channel_id=?
-            """, (channel_id,))
+        if channel_data[0]["type"]==3:
+            channel_members=db.execute_raw_sql("""
+                SELECT u.username, u.public_key AS public
+                FROM users u
+                JOIN members m ON u.id=m.user_id
+                WHERE m.channel_id=? AND ((m.permissions&?)!=0 OR (m.permissions&?)!=0)
+                """, (channel_id, perm.manage_members, perm.manage_permissions))
+        else:
+            channel_members=db.execute_raw_sql("""
+                SELECT u.username, u.public_key AS public
+                FROM users u
+                JOIN members m ON u.id=m.user_id
+                WHERE m.channel_id=?
+                """, (channel_id,))
         return jsonify(channel_members)
     pagination=get_pagination_params()
     if isinstance(pagination, tuple): return pagination

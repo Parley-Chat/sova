@@ -3,7 +3,7 @@ import json
 from .utils import (
     make_json_error, logged_in, sliding_window_rate_limiter,
     timestamp, perm, has_permission, validate_request_data,
-    get_file_size_chunked
+    get_file_size_chunked, public_key_open, rsa_verify_signature
 )
 from utils import generate
 from .stream import message_sent, message_edited, message_deleted, dm_unhide
@@ -51,6 +51,8 @@ def channel_messages(db:SQLite, id, channel_id):
         sql_parts=[
             "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
             "NULL AS user, ",
+            "NULL AS signature, ",
+            "NULL AS signed_timestamp, ",
             "(SELECT json_group_array(json_object(",
             "   'id', am.file_id, ",
             "   'filename', f.filename, ",
@@ -70,6 +72,8 @@ def channel_messages(db:SQLite, id, channel_id):
             "  'display', u.display_name, ",
             "  'pfp', u.pfp",
             ") AS user, ",
+            "m.signature, ",
+            "m.signed_timestamp, ",
             "(SELECT json_group_array(json_object(",
             "   'id', am.file_id, ",
             "   'filename', f.filename, ",
@@ -117,12 +121,17 @@ def channel_messages(db:SQLite, id, channel_id):
 @messages_bp.route("/channel/<string:channel_id>/messages", methods=["POST"])
 @logged_in()
 @sliding_window_rate_limiter(limit=100, window=60, user_limit=50)
-@validate_request_data({"content": {}})
+@validate_request_data({"content": {}, "timestamp": {}, "signature": {}})
 def sending_messages(db:SQLite, id, channel_id):
     files=request.files.getlist("files")
     msg=request.form["content"].strip()
     if (not files and not msg): return make_json_error(400, "content or files required")
     replied_to=request.form.get("replied_to")
+    try: signed_timestamp=int(request.form["timestamp"])
+    except ValueError: return make_json_error(400, "Invalid timestamp format")
+    signature=request.form["signature"]
+    current_time=timestamp()
+    if abs(current_time-signed_timestamp)>config["messages"]["signature_timestamp_window"]: return make_json_error(400, "Timestamp is invalid")
     if replied_to and not db.exists("messages", {"id": replied_to, "channel_id": channel_id}): return make_json_error(400, "replied_to message not found in this channel")
     member_channel_data=db.execute_raw_sql("""
         SELECT m.permissions, c.type, c.permissions as channel_permissions
@@ -139,6 +148,13 @@ def sending_messages(db:SQLite, id, channel_id):
     channel_permissions=data["channel_permissions"]
     if not has_permission(member_permissions, perm.send_messages, channel_permissions): return make_json_error(403, "No permission to send messages")
     if len(msg)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
+    if data["type"]==3:
+        user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+        if not user_public_key_data: return make_json_error(500, "User public key not found")
+        public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
+        if error_resp: return error_resp
+        signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
+        if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
     if data["type"]!=3:
@@ -156,7 +172,7 @@ def sending_messages(db:SQLite, id, channel_id):
         iv=request.form["iv"]
     message_id=generate()
     sent_at=timestamp(True)
-    db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": id, "content": msg, "key": key, "iv": iv, "timestamp": sent_at, "replied_to": replied_to})
+    db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": id, "content": msg, "key": key, "iv": iv, "timestamp": sent_at, "replied_to": replied_to, "signature": signature, "signed_timestamp": signed_timestamp})
     if db.exists("message_reads", {"user_id": id, "channel_id": channel_id}): db.update_data("message_reads", {"last_message_id": message_id, "read_at": sent_at}, {"user_id": id, "channel_id": channel_id})
     else: db.insert_data("message_reads", {"user_id": id, "channel_id": channel_id, "last_message_id": message_id, "read_at": sent_at})
     attachments=[]
@@ -184,6 +200,7 @@ def sending_messages(db:SQLite, id, channel_id):
 
     # Get user data for the emit
     user_data=db.execute_raw_sql("SELECT username, display_name AS display, pfp FROM users WHERE id=?", (id,))[0] if not (data["type"]==3 and not (has_permission(member_permissions, perm.send_messages, channel_permissions) or has_permission(member_permissions, perm.manage_members, channel_permissions) or has_permission(member_permissions, perm.manage_permissions, channel_permissions))) else None
+    hide_signature=(data["type"]==3 and not (has_permission(member_permissions, perm.send_messages, channel_permissions) or has_permission(member_permissions, perm.manage_members, channel_permissions) or has_permission(member_permissions, perm.manage_permissions, channel_permissions)))
     message_data={
         "id": message_id,
         "content": msg,
@@ -193,7 +210,9 @@ def sending_messages(db:SQLite, id, channel_id):
         "edited_at": None,
         "replied_to": replied_to,
         "user": user_data,
-        "attachments": attachments
+        "attachments": attachments,
+        "signature": None if hide_signature else signature,
+        "signed_timestamp": None if hide_signature else signed_timestamp
     }
     if data["type"]==1:
         current_member=db.select_data("members", ["hidden"], {"channel_id": channel_id, "user_id": id})
@@ -225,10 +244,24 @@ def message_management(db:SQLite, id, channel_id, message_id):
     if data["channel_id"]!=channel_id: return make_json_error(404, "Message not found")
     if request.method=="PATCH":
         if not request.form.get("content"): return make_json_error(400, "content is required")
+        if not request.form.get("timestamp"): return make_json_error(400, "timestamp is required")
+        if not request.form.get("signature"): return make_json_error(400, "signature is required")
         if len(request.form["content"])>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
         if data["user_id"]!=id: return make_json_error(403, "Can only edit your own messages")
+        try: signed_timestamp=int(request.form["timestamp"])
+        except ValueError: return make_json_error(400, "Invalid timestamp format")
+        signature=request.form["signature"]
+        current_time=timestamp()
+        if abs(current_time-signed_timestamp)>config["messages"]["signature_timestamp_window"]: return make_json_error(400, "Timestamp is invalid")
+        if data["type"]==3:
+            user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+            if not user_public_key_data: return make_json_error(500, "User public key not found")
+            public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
+            if error_resp: return error_resp
+            signed_data=f"{request.form['content']}:{channel_id}:{signed_timestamp}"
+            if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
 
-        update_fields={"content": request.form["content"], "edited_at": timestamp(True)}
+        update_fields={"content": request.form["content"], "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
 
         if data["type"]!=3:
             if "iv" not in request.form: return make_json_error(400, "iv is required in non-broadcast channels")
@@ -239,7 +272,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         # Get updated message data for emit
         updated_message=db.execute_raw_sql("""
-            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to,
+            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp,
             json_object('username', u.username, 'display', u.display_name, 'pfp', u.pfp) as user,
             (SELECT json_group_array(json_object('id', am.file_id, 'filename', f.filename, 'size', f.size, 'mimetype', f.mimetype))
              FROM attachment_message am JOIN files f ON am.file_id = f.id WHERE am.message_id = m.id) as attachments
