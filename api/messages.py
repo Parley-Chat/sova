@@ -153,7 +153,7 @@ def sending_messages(db:SQLite, id, channel_id):
         if not user_public_key_data: return make_json_error(500, "User public key not found")
         public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
         if error_resp: return error_resp
-        signed_data=json.dumps({"content": msg, "timestamp": signed_timestamp, "channel": channel_id}, separators=(',', ':'))
+        signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
         if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
@@ -258,7 +258,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
             if not user_public_key_data: return make_json_error(500, "User public key not found")
             public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
             if error_resp: return error_resp
-            signed_data=json.dumps({"content": request.form["content"], "timestamp": signed_timestamp, "channel": channel_id}, separators=(',', ':'))
+            signed_data=f"{request.form['content']}:{channel_id}:{signed_timestamp}"
             if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
 
         update_fields={"content": request.form["content"], "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
