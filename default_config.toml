@@ -33,7 +33,8 @@ uri_prefix="$URI_PREFIX" # URI Prefix, you must include it when connecting to th
     invite="" # Automatically add people to a channel when they signup
     disable_channel_creation=false # Prevents all users from creating channels, and also removes the ability of creating DM channels
     disable_channel_deletion=false # Prevents all users from leaving all channels
-[webrtc]
+[calls]
+    enabled=true # Enable or disable calls feature
     stun_servers=["stun:stun.l.google.com:19302"] # STUN servers for WebRTC NAT traversal
     turn_servers=[] # Optional TURN servers for relaying (format: ["turn:example.com:3478"])
     turn_username="" # TURN server username

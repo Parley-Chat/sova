@@ -6,16 +6,11 @@ from db import SQLite
 
 calls_bp=Blueprint("calls", __name__)
 
-@calls_bp.route("/webrtc/config", methods=["GET"])
-@logged_in()
-@sliding_window_rate_limiter(limit=30, window=60, user_limit=15)
-def get_webrtc_config(db:SQLite, id):
-    return jsonify({"stun_servers": config["webrtc"]["stun_servers"], "turn_servers": config["webrtc"]["turn_servers"], "turn_username": config["webrtc"]["turn_username"], "turn_password": config["webrtc"]["turn_password"]})
-
 @calls_bp.route("/channel/<string:channel_id>/call", methods=["POST"])
 @logged_in()
 @sliding_window_rate_limiter(limit=30, window=60, user_limit=15)
 def start_or_join_call(db:SQLite, id, channel_id):
+    if not config["calls"]["enabled"]: return make_json_error(403, "Calls are disabled")
     member_channel_data=db.execute_raw_sql("""
         SELECT c.type FROM channels c
         JOIN members m ON c.id=m.channel_id
@@ -25,6 +20,18 @@ def start_or_join_call(db:SQLite, id, channel_id):
     if member_channel_data[0]["type"]!=1: return make_json_error(400, "Calls are only supported in DM channels")
     other_member=db.execute_raw_sql("SELECT user_id FROM members WHERE channel_id=? AND user_id!=?", (channel_id, id))
     if other_member and db.exists("blocks", {"blocker_id": other_member[0]["user_id"], "blocked_id": id}): return make_json_error(403, "You are blocked by this user")
+    active_calls=db.execute_raw_sql("""
+        SELECT cp.channel_id FROM call_participants cp
+        WHERE cp.user_id=? AND cp.left_at IS NULL AND cp.channel_id!=?
+    """, (id, channel_id))
+    if active_calls:
+        for active_call in active_calls:
+            db.update_data("call_participants", {"left_at": timestamp(True)}, {"channel_id": active_call["channel_id"], "user_id": id})
+            user_data_leave=db.execute_raw_sql("SELECT username, display_name, pfp FROM users WHERE id=?", (id,))[0]
+            call_left(active_call["channel_id"], user_data_leave, db)
+            remaining_participants=db.execute_raw_sql("SELECT COUNT(*) as count FROM call_participants WHERE channel_id=? AND left_at IS NULL", (active_call["channel_id"],))
+            if remaining_participants[0]["count"]==0:
+                db.delete_data("calls", {"channel_id": active_call["channel_id"]})
     existing_call=db.select_data("calls", ["started_by", "started_at"], {"channel_id": channel_id})
     if existing_call:
         participant=db.select_data("call_participants", ["left_at"], {"channel_id": channel_id, "user_id": id})
