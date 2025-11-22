@@ -1,9 +1,16 @@
 from flask import Blueprint, request, jsonify
 from .utils import make_json_error, logged_in, sliding_window_rate_limiter, timestamp, validate_request_data
 from .stream import call_start, call_join, call_left, call_signal
+from utils import config
 from db import SQLite
 
 calls_bp=Blueprint("calls", __name__)
+
+@calls_bp.route("/webrtc/config", methods=["GET"])
+@logged_in()
+@sliding_window_rate_limiter(limit=30, window=60, user_limit=15)
+def get_webrtc_config(db:SQLite, id):
+    return jsonify({"stun_servers": config["webrtc"]["stun_servers"], "turn_servers": config["webrtc"]["turn_servers"], "turn_username": config["webrtc"]["turn_username"], "turn_password": config["webrtc"]["turn_password"]})
 
 @calls_bp.route("/channel/<string:channel_id>/call", methods=["POST"])
 @logged_in()
