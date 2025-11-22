@@ -86,10 +86,12 @@ def get_call_status(db:SQLite, id, channel_id):
     if not db.exists("members", {"user_id": id, "channel_id": channel_id}): return make_json_error(404, "Channel not found")
     call_data=db.select_data("calls", ["started_by", "started_at"], {"channel_id": channel_id})
     if not call_data: return jsonify({"active": False})
+    starter_data=db.execute_raw_sql("SELECT username FROM users WHERE id=?", (call_data[0]["started_by"],))[0]
     participants=db.execute_raw_sql("""
         SELECT u.username, u.display_name, u.pfp, cp.joined_at
         FROM call_participants cp
         JOIN users u ON cp.user_id=u.id
         WHERE cp.channel_id=? AND cp.left_at IS NULL
     """, (channel_id,))
-    return jsonify({"active": True, "started_by": call_data[0]["started_by"], "started_at": call_data[0]["started_at"], "participants": [{"username": p["username"], "display": p["display_name"], "pfp": p["pfp"], "joined_at": p["joined_at"]} for p in participants]})
+    answered=len(participants)>=2
+    return jsonify({"active": True, "answered": answered, "started_by": starter_data["username"], "started_at": call_data[0]["started_at"], "participants": [{"username": p["username"], "display": p["display_name"], "pfp": p["pfp"], "joined_at": p["joined_at"]} for p in participants]})
