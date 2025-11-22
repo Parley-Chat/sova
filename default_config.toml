@@ -12,7 +12,7 @@ uri_prefix="$URI_PREFIX" # URI Prefix, you must include it when connecting to th
     proxy=true # Enable this if you are behind a reverse proxy
 [frontend]
     hosted=true # Change to false if you don't want the backend host the frontend
-    excluded_frontend_root_paths=["README.md", "400.html", "404.html", "405.html", "413.html", "415.html", "500.html", ".git", "quickrun.js"]
+    excluded_frontend_root_paths=["README.md", "LICENSE.md", ".nojekyll", "400.html", "404.html", "405.html", "413.html", "415.html", "500.html", ".git", "quickrun.js"]
     frontend_directory="../Mura"
 [max_members]
     encrypted_channels=100 # Maximum members allowed in encrypted channels (DM/Group) due to key computation overhead
