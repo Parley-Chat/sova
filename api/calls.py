@@ -61,7 +61,7 @@ def leave_call(db:SQLite, id, channel_id):
 @calls_bp.route("/channel/<string:channel_id>/call/signal", methods=["POST"])
 @logged_in()
 @sliding_window_rate_limiter(limit=500, window=60, user_limit=250)
-@validate_request_data({"type": {}, "data": {}})
+@validate_request_data({"type": {}, "data": {}}, source="json")
 def signal_call(db:SQLite, id, channel_id):
     if not db.exists("members", {"user_id": id, "channel_id": channel_id}): return make_json_error(404, "Channel not found")
     participant=db.select_data("call_participants", ["left_at"], {"channel_id": channel_id, "user_id": id})

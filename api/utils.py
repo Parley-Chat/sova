@@ -139,6 +139,7 @@ def validate_request_data(params: dict, status=400, source="form"):
         def wrapper(*args, **kwargs):
             if source=="form": data_source=request.form
             elif source=="args": data_source=request.args
+            elif source=="json": data_source=request.json or {}
             else: return make_json_error(500, "Invalid validation source specified")
             for k,v in params.items():
                 if k not in data_source:
