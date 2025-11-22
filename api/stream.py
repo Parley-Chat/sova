@@ -437,6 +437,54 @@ def dm_unhide(channel_id, user_id, db):
         "user": user_event_data
     }, {"user_id": [user_id]})
 
+def call_start(channel_id, started_by_username, db):
+    """Emit call start event"""
+    emit("call_start", {
+        "channel_id": channel_id,
+        "started_by": started_by_username,
+        "timestamp": timestamp(True)
+    }, {
+        "channel_ids": [channel_id]
+    })
+
+def call_join(channel_id, user_data, db):
+    """Emit call join event"""
+    emit("call_join", {
+        "channel_id": channel_id,
+        "user": {
+            "username": user_data["username"],
+            "display": user_data["display_name"],
+            "pfp": user_data["pfp"]
+        }
+    }, {
+        "channel_ids": [channel_id]
+    })
+
+def call_left(channel_id, user_data, db):
+    """Emit call left event"""
+    emit("call_left", {
+        "channel_id": channel_id,
+        "user": {
+            "username": user_data["username"],
+            "display": user_data["display_name"],
+            "pfp": user_data["pfp"]
+        }
+    }, {
+        "channel_ids": [channel_id]
+    })
+
+def call_signal(channel_id, from_user_id, signal_type, signal_data, db):
+    """Emit WebRTC signaling data to other participant"""
+    emit("call_signal", {
+        "channel_id": channel_id,
+        "from_user": from_user_id,
+        "type": signal_type,
+        "data": signal_data
+    }, {
+        "channel_ids": [channel_id],
+        "exclude_user": from_user_id
+    })
+
 @stream_bp.route("/stream")
 @logged_in(True)
 @sliding_window_rate_limiter(limit=10, window=60, user_limit=5)
