@@ -495,11 +495,28 @@ def stream(db:SQLite, session_id, id):
         WHERE m.user_id=?
     """, (id,))
     channel_ids=[row["id"] for row in channel_ids]
+    active_call_events=[]
+    if channel_ids:
+        placeholders=", ".join(["?"]*len(channel_ids))
+        active_call_rows=db.execute_raw_sql(f"""
+            SELECT c.channel_id, c.started_at, u.username FROM calls c
+            JOIN users u ON c.started_by=u.id
+            WHERE c.channel_id IN ({placeholders})
+        """, tuple(channel_ids))
+        for row in active_call_rows:
+            active_call_events.append({
+                "event": "call_start",
+                "data": {
+                    "channel_id": row["channel_id"],
+                    "started_by": row["username"],
+                    "timestamp": row["started_at"]
+                }
+            })
 
     stream_data={
         "channel_ids": channel_ids,
         "user_id": id,
-        "pending": [],
+        "pending": active_call_events,
         "lock": Lock()
     }
     client=generate()
