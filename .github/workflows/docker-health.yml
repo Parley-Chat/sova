@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Parley-Chat/Mura
-          path: ../Mura
+          path: Mura
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,6 +27,7 @@ jobs:
       - name: Create config.toml with blank URI prefix
         run: |
           sed 's/uri_prefix="\$URI_PREFIX"/uri_prefix=""/' default_config.toml > config.toml
+          sed -i 's|frontend_directory="../Mura"|frontend_directory="./Mura"|' config.toml
 
       - name: Create data directory
         run: mkdir -p data
@@ -35,6 +36,10 @@ jobs:
         run: |
           pip install cryptography
           python self_ssl.py
+
+      - name: Update docker-compose for CI
+        run: |
+          sed -i '/\.\.\/Mura:\/Mura/d' docker-compose.yml
 
       - name: Build and start Docker Compose
         run: docker compose up -d --build
