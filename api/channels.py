@@ -44,6 +44,7 @@ def channels(db:SQLite, id):
                        'edited_at', last_msg.edited_at,
                        'signature', last_msg.signature,
                        'signed_timestamp', last_msg.signed_timestamp,
+                       'nonce', last_msg.nonce,
                        'user',
                            json_object(
                                'username', last_msg_user.username,

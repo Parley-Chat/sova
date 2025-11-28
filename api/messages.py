@@ -49,7 +49,7 @@ def channel_messages(db:SQLite, id, channel_id):
     if before_messages>100: before_messages=100
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
             "NULL AS user, ",
             "NULL AS signature, ",
             "NULL AS signed_timestamp, ",
@@ -66,7 +66,7 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
             "json_object(",
             "  'username', u.username, ",
             "  'display', u.display_name, ",
@@ -170,9 +170,10 @@ def sending_messages(db:SQLite, id, channel_id):
         if key!=latest_user_key[0]["key_id"]: return make_json_error(400, "Invalid or outdated encryption key")
         if len(request.form["iv"])!=16: return make_json_error(400, "Invalid iv parameter, error: length")
         iv=request.form["iv"]
+    nonce=request.form.get("nonce")
     message_id=generate()
     sent_at=timestamp(True)
-    db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": id, "content": msg, "key": key, "iv": iv, "timestamp": sent_at, "replied_to": replied_to, "signature": signature, "signed_timestamp": signed_timestamp})
+    db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": id, "content": msg, "key": key, "iv": iv, "timestamp": sent_at, "replied_to": replied_to, "signature": signature, "signed_timestamp": signed_timestamp, "nonce": nonce})
     if db.exists("message_reads", {"user_id": id, "channel_id": channel_id}): db.update_data("message_reads", {"last_message_id": message_id, "read_at": sent_at}, {"user_id": id, "channel_id": channel_id})
     else: db.insert_data("message_reads", {"user_id": id, "channel_id": channel_id, "last_message_id": message_id, "read_at": sent_at})
     attachments=[]
@@ -212,7 +213,8 @@ def sending_messages(db:SQLite, id, channel_id):
         "user": user_data,
         "attachments": attachments,
         "signature": None if hide_signature else signature,
-        "signed_timestamp": None if hide_signature else signed_timestamp
+        "signed_timestamp": None if hide_signature else signed_timestamp,
+        "nonce": nonce
     }
     if data["type"]==1:
         current_member=db.select_data("members", ["hidden"], {"channel_id": channel_id, "user_id": id})
@@ -272,7 +274,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         # Get updated message data for emit
         updated_message=db.execute_raw_sql("""
-            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp,
+            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce,
             json_object('username', u.username, 'display', u.display_name, 'pfp', u.pfp) as user,
             (SELECT json_group_array(json_object('id', am.file_id, 'filename', f.filename, 'size', f.size, 'mimetype', f.mimetype))
              FROM attachment_message am JOIN files f ON am.file_id = f.id WHERE am.message_id = m.id) as attachments

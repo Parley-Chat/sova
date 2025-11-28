@@ -33,7 +33,7 @@ def get_pinned_messages(db:SQLite, id, channel_id):
     page_size, offset = pagination["page_size"], pagination["offset"]
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
             "NULL AS user, ",
             "(SELECT json_group_array(json_object(",
             "   'id', am.file_id, ",
@@ -49,7 +49,7 @@ def get_pinned_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
             "json_object(",
             "  'username', u.username, ",
             "  'display', u.display_name, ",
