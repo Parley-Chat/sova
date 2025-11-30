@@ -10,7 +10,6 @@ from utils import generate
 from db import SQLite
 import bcrypt
 import re
-import os.path
 from utils import config, RED, colored_log
 from .stream import channel_added, member_join
 
@@ -23,7 +22,6 @@ def index(): return {"running": "Parley", "version": version,
   "disable_channel_deletion": config["instance"]["disable_channel_deletion"],
   "max_channels": config["max_members"]["max_channels"], "password_protected": bool(config["instance"]["password"]),
   "calls": config["calls"],
-  "rules": os.path.isfile("legal/rules.md"),
   **({"dev": True} if dev_mode else {})}, 200
 
 def join_invite(db, id, invite_code):
