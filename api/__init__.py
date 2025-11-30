@@ -9,7 +9,7 @@ from .users import users_bp
 from .pins import pins_bp
 from .stream import stream_bp
 from .calls import calls_bp
-from .rules import rules_bp
+from .legal import legal_bp
 from .utils import process_cors_headers, cleaner
 from threading import Thread
 
@@ -30,6 +30,6 @@ api_bp.register_blueprint(users_bp)
 api_bp.register_blueprint(pins_bp)
 api_bp.register_blueprint(stream_bp)
 api_bp.register_blueprint(calls_bp)
-api_bp.register_blueprint(rules_bp)
+api_bp.register_blueprint(legal_bp)
 
 Thread(target=cleaner, daemon=True).start()
