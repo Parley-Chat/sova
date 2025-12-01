@@ -1,4 +1,4 @@
 # DO NOT TOUCH THESE IF YOU DON'T KNOW WHAT YOU'RE DOING
 version="0.5.1" # app version
 db=6 # database schema version
-config=4 # config file version
+config=5 # config file version
