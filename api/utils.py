@@ -194,7 +194,7 @@ def get_challenge(public_key):
 browser_regex=re.compile(r"([a-zA-Z]+)\/[0-9.]+(?: Mobile(?:\/[0-9a-zA-Z]+)?)?(?: Safari\/[0-9]+.[0-9]+)?$")
 device_regex=re.compile(r"^.*?\(([a-zA-Z0-9]+)")
 
-def regex_first_group_encrypted(match, public_key): return rsa_encrypt(public_key, match.group(1)) if match else match
+def regex_first_group_encrypted(match, public_key): return rsa_encrypt(public_key, match.group(1)[:50]) if match else None
 
 challenges={}
 challenges_lock=Lock()
