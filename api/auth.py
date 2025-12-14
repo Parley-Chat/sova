@@ -111,8 +111,8 @@ def solve():
         if error_resp: return error_resp
     if not reset_passkey:
         if "User-Agent" in request.headers:
-            browser=regex_first_group_encrypted(browser_regex.search(request.headers["User-Agent"])[:50], public_key)
-            device=regex_first_group_encrypted(device_regex.search(request.headers["User-Agent"])[:50], public_key)
+            browser=regex_first_group_encrypted(browser_regex.search(request.headers["User-Agent"]), public_key)
+            device=regex_first_group_encrypted(device_regex.search(request.headers["User-Agent"]), public_key)
         else: browser=device=None
         session=generate(50)
         db.insert_data("session", {"user": id, "token_hash": hash_token(session), "id": generate(), "browser": browser, "device": device, "logged_in_at": logged_in_at or timestamp(), "next_challenge": timestamp()+3600})
