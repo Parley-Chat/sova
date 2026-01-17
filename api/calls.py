@@ -75,7 +75,7 @@ def signal_call(db:SQLite, id, channel_id):
     if not participant or participant[0]["left_at"] is not None: return make_json_error(403, "You are not in this call")
     signal_type=request.json.get("type")
     signal_data=request.json.get("data")
-    if signal_type not in ["offer", "answer", "ice"]: return make_json_error(400, "Invalid signal type")
+    if signal_type not in ["offer", "answer", "ice", "settings"]: return make_json_error(400, "Invalid signal type")
     call_signal(channel_id, id, signal_type, signal_data, db)
     return jsonify({"success": True})
 
