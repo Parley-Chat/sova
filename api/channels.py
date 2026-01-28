@@ -20,6 +20,8 @@ def channels(db:SQLite, id):
     user_channels=db.execute_raw_sql("""
         SELECT c.id, c.type,
                CASE WHEN c.type=1 THEN COALESCE(other_u.display_name, other_u.username) ELSE c.name END as name,
+               CASE WHEN c.type=1 THEN other_u.username ELSE NULL END as username,
+               CASE WHEN c.type=1 THEN other_u.display_name ELSE NULL END as display_name,
                CASE WHEN c.type=1 THEN other_u.pfp ELSE c.pfp END as pfp,
                CASE WHEN m.permissions IS NULL THEN c.permissions ELSE m.permissions END as permissions,
                c.permissions as channel_permissions,
@@ -92,6 +94,10 @@ def channels(db:SQLite, id):
             channel["last_message"]=last_message_data
         if not has_permission(user_permissions, perm.manage_permissions, channel_permissions):
             del channel["channel_permissions"]
+        if channel["type"]==1:
+            if channel["display_name"] is None:
+                del channel["username"]
+            del channel["display_name"]
     return jsonify(user_channels)
 
 @channels_bp.route("/channels", methods=["POST"])
@@ -167,14 +173,23 @@ def channel_creation(db:SQLite, id):
                 "permissions": perm.send_messages,
                 "member_count": 2
             }
+            if target_user_data["display_name"]:
+                channel_data["username"]=target_user_data["username"]
 
             # Emit to both users
             channel_added(id, channel_data, db)
 
             # For the target user, the channel name should be current user's display_name or username
-            target_channel_data=channel_data.copy()
-            target_channel_data["name"]=current_user_data["display_name"] if current_user_data["display_name"] else current_user_data["username"]
-            target_channel_data["pfp"]=current_user_data["pfp"]
+            target_channel_data={
+                "id": channel_id,
+                "name": current_user_data["display_name"] if current_user_data["display_name"] else current_user_data["username"],
+                "pfp": current_user_data["pfp"],
+                "type": 1,
+                "permissions": perm.send_messages,
+                "member_count": 2
+            }
+            if current_user_data["display_name"]:
+                target_channel_data["username"]=current_user_data["username"]
             channel_added(target_id, target_channel_data, db)
 
             return jsonify({"channel_id": channel_id, "success": True}), 201

@@ -422,12 +422,14 @@ def dm_unhide(channel_id, user_id, db):
     # Emit channel_added event to the user who unhid the channel (showing other user's info)
     channel_data={
         "id": channel_id,
-        "name": other_user_data["username"],
+        "name": other_user_data["display_name"] if other_user_data["display_name"] else other_user_data["username"],
         "pfp": other_user_data["pfp"],
         "type": 1,
         "permissions": perm.send_messages,
         "member_count": 2
     }
+    if other_user_data["display_name"]:
+        channel_data["username"]=other_user_data["username"]
     channel_added(user_id, channel_data, db)
 
     # Emit member_join event only to the user who unhid the channel
