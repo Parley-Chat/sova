@@ -54,7 +54,7 @@ def store_channel_keys(db:SQLite, id, channel_id):
         if username not in user_keys: return make_json_error(400, "User missing from keys")
     key_id=generate()
     with db:
-        db.insert_data("channels_keys_info", {"key_id": key_id, "channel_id": channel_id, "by": id, "timestamp": timestamp(), "expires_at": timestamp(True)+86400})
+        db.insert_data("channels_keys_info", {"key_id": key_id, "channel_id": channel_id, "by": id, "timestamp": timestamp(), "expires_at": timestamp(True)+86400000})
         for username, encrypted_key in user_keys.items():
             db.insert_data("channels_keys", {"id": key_id, "channel_id": channel_id, "user_id": user_ids[username], "key": encrypted_key})
     return jsonify({"key_id": key_id, "success": True}), 201

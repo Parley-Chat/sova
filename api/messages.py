@@ -285,6 +285,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
             signed_data=f"{request.form['content']}:{channel_id}:{signed_timestamp}"
             if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
 
+        if request.form["content"]==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
         update_fields={"content": request.form["content"], "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
 
         if data["type"]!=3:
