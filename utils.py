@@ -8,13 +8,15 @@ def generate(size=20): return nanoid.generate(size=size)
 
 stopping=Event()
 
-with open("version.toml", "rb") as f:
+_data_dir=sys._MEIPASS if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+
+with open(os.path.join(_data_dir, "version.toml"), "rb") as f:
     version_data=tomllib.load(f)
 version=version_data["version"]
 db_version=version_data["db"]
 
 if not os.path.isfile("config.toml") or os.path.getsize("config.toml")==0:
-    with open("default_config.toml") as fc:
+    with open(os.path.join(_data_dir, "default_config.toml")) as fc:
         with open("config.toml", "w") as f:
             f.write("".join(fc.readlines()[2:]).replace("$URI_PREFIX", generate()))
     print("Wrote config.toml")
