@@ -1,5 +1,5 @@
-import os
-os.chdir(os.path.dirname(__file__))
+import os, sys
+os.chdir(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__)))
 from utils import stopping, db_version, dev_mode, config, BLUE, YELLOW, RED, colored_log
 os.makedirs(os.path.dirname(config["data_dir"]["database"]), exist_ok=True)
 from flask import Flask, send_from_directory, abort, request, jsonify, redirect, make_response
