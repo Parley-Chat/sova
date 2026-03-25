@@ -29,6 +29,8 @@ with SQLite() as db:
     db.create_table("message_reads", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "user_id": "TEXT NOT NULL", "channel_id": "TEXT NOT NULL", "last_message_id": "TEXT NOT NULL", "read_at": "INTEGER NOT NULL", "UNIQUE": "(user_id, channel_id)", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (last_message_id)": "REFERENCES messages (id) ON DELETE CASCADE"})
     db.create_table("bans", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "user_id": "TEXT NOT NULL", "channel_id": "TEXT NOT NULL", "banned_by": "TEXT NOT NULL", "banned_at": "INTEGER NOT NULL", "reason": "TEXT", "UNIQUE": "(user_id, channel_id)", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (banned_by)": "REFERENCES users (id) ON DELETE CASCADE"})
     db.create_table("blocks", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "blocker_id": "TEXT NOT NULL", "blocked_id": "TEXT NOT NULL", "blocked_at": "INTEGER NOT NULL", "UNIQUE": "(blocker_id, blocked_id)", "FOREIGN KEY (blocker_id)": "REFERENCES users (id) ON DELETE CASCADE", "FOREIGN KEY (blocked_id)": "REFERENCES users (id) ON DELETE CASCADE"})
+    db.create_table("calls", {"channel_id": "TEXT PRIMARY KEY", "started_by": "TEXT NOT NULL", "started_at": "INTEGER NOT NULL", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (started_by)": "REFERENCES users (id) ON DELETE CASCADE"})
+    db.create_table("call_participants", {"channel_id": "TEXT NOT NULL", "user_id": "TEXT NOT NULL", "joined_at": "INTEGER NOT NULL", "left_at": "INTEGER", "PRIMARY KEY": "(channel_id, user_id)", "FOREIGN KEY (channel_id)": "REFERENCES calls (channel_id) ON DELETE CASCADE", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE"})
     db.create_index("session", "user")
     db.create_index("members", "channel_id")
     db.create_index("members", "message_seq")
@@ -43,6 +45,8 @@ with SQLite() as db:
     db.create_index("channels_keys_info", "channel_id")
     db.create_index("message_reads", "user_id")
     db.create_index("message_reads", "channel_id")
+    db.create_index("call_participants", "channel_id")
+    db.create_index("call_participants", "user_id")
     if db.execute_raw_sql("PRAGMA user_version;")[0]["user_version"]!=db_version: db.execute_raw_sql(f"PRAGMA user_version={db_version};")
 
 uri_prefix="/"+config["uri_prefix"] if config["uri_prefix"] else ""
