@@ -378,7 +378,7 @@ class SQLite:
             if file_type=="attachment":
                 file_path=os.path.join(config["data_dir"]["attachments"], file_record["id"])
             elif file_type=="pfp":
-                file_path=os.path.join(config["data_dir"]["pfps"], file_record["id"])
+                file_path=os.path.join(config["data_dir"]["pfps"], f"{file_record['id']}.webp")
             else:
                 continue
             if os.path.isfile(file_path):
