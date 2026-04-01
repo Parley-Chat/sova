@@ -48,7 +48,8 @@ def edit_me(db:SQLite, id):
     update_data={}
     errors=[]
     if "display" in request.form:
-        if len(request.form["display"])>1 and len(request.form["display"])<25: update_data["display_name"]=request.form["display"] if request.form["display"] else None
+        if request.form["display"]=="": update_data["display_name"]=None
+        elif len(request.form["display"])>1 and len(request.form["display"])<25: update_data["display_name"]=request.form["display"]
         else: errors.append("Invalid display parameter, error: length")
     with SQLite() as db:
         if request.files and "pfp" in request.files:
