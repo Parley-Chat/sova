@@ -258,7 +258,7 @@ def sending_messages(db:SQLite, id, channel_id):
 @sliding_window_rate_limiter(limit=150, window=60, user_limit=75)
 def message_management(db:SQLite, id, channel_id, message_id):
     message_channel_data=db.execute_raw_sql("""
-        SELECT m.user_id, m.channel_id, c.type, c.permissions as channel_permissions
+        SELECT m.user_id, m.channel_id, m.content, m.iv, c.type, c.permissions as channel_permissions
         FROM messages m
         JOIN channels c ON m.channel_id=c.id
         WHERE m.id=?
