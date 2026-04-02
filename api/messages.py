@@ -267,10 +267,11 @@ def message_management(db:SQLite, id, channel_id, message_id):
     data=message_channel_data[0]
     if data["channel_id"]!=channel_id: return make_json_error(404, "Message not found")
     if request.method=="PATCH":
-        if not request.form.get("content"): return make_json_error(400, "content is required")
-        if not request.form.get("timestamp"): return make_json_error(400, "timestamp is required")
-        if not request.form.get("signature"): return make_json_error(400, "signature is required")
-        if len(request.form["content"])>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
+        content=request.form.get("content")
+        if content is None: return make_json_error(400, "content is required")
+        if request.form.get("timestamp") is None: return make_json_error(400, "timestamp is required")
+        if request.form.get("signature") is None: return make_json_error(400, "signature is required")
+        if len(content)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
         if data["user_id"]!=id: return make_json_error(403, "Can only edit your own messages")
         try: signed_timestamp=int(request.form["timestamp"])
         except ValueError: return make_json_error(400, "Invalid timestamp format")
@@ -282,11 +283,11 @@ def message_management(db:SQLite, id, channel_id, message_id):
             if not user_public_key_data: return make_json_error(500, "User public key not found")
             public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
             if error_resp: return error_resp
-            signed_data=f"{request.form['content']}:{channel_id}:{signed_timestamp}"
+            signed_data=f"{content}:{channel_id}:{signed_timestamp}"
             if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
 
-        if request.form["content"]==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
-        update_fields={"content": request.form["content"], "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
+        if content==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
+        update_fields={"content": content, "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
 
         if data["type"]!=3:
             if "iv" not in request.form: return make_json_error(400, "iv is required in non-broadcast channels")
