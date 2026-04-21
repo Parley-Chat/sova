@@ -1,11 +1,13 @@
 from flask import Blueprint, request, jsonify
 import json
+import re
 from .utils import make_json_error, logged_in, sliding_window_rate_limiter, timestamp, perm, has_permission, hash_token
 from .stream import message_sent
 from utils import generate, config
 from db import SQLite
 
 webhooks_bp=Blueprint("webhooks", __name__)
+data_uri_regex=re.compile(r"^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$")
 
 def _get_manageable_channel(db, id, channel_id):
     member_channel_data=db.execute_raw_sql("""
@@ -29,7 +31,7 @@ def _build_webhook_path(channel_id, webhook_id, service=None, token=None):
 
 def _get_webhook_data(db, channel_id, webhook_id, token):
     webhook_data=db.execute_raw_sql("""
-        SELECT w.id, w.channel_id, w.name, w.user_id, w.token_hash, c.type
+        SELECT w.id, w.channel_id, w.name, w.pfp, w.token_hash, c.type
         FROM webhooks w
         JOIN channels c ON c.id=w.channel_id
         WHERE w.id=? AND w.channel_id=?
@@ -41,6 +43,13 @@ def _get_webhook_data(db, channel_id, webhook_id, token):
 
 def _truncate_webhook_content(content):
     return content[:config["messages"]["max_message_length"]]
+
+def _validate_webhook_pfp(pfp):
+    if pfp is None or pfp=="": return None, None
+    pfp=pfp.strip()
+    if len(pfp)>131072: return None, make_json_error(400, "Webhook pfp is too large")
+    if not data_uri_regex.fullmatch(pfp): return None, make_json_error(400, "Webhook pfp must be an image data URI")
+    return pfp, None
 
 def _github_message(payload):
     event=request.headers.get("X-GitHub-Event", "github")
@@ -79,13 +88,18 @@ def _get_webhook_content(service):
     if service not in [None, "discord", "github"]: return None, make_json_error(400, "Unsupported webhook compatibility mode")
     if service=="github":
         if not isinstance(payload, dict): return None, make_json_error(400, "GitHub webhook payload must be JSON")
-        return _github_message(payload), None
+        return {"content": _github_message(payload), "name": None, "pfp": None}, None
     data=payload if isinstance(payload, dict) else request.form
     content=(data.get("content") or "").strip()
     if not content and service=="discord" and isinstance(payload, dict) and payload.get("embeds"): content=json.dumps(payload["embeds"], ensure_ascii=True)
     if not content and isinstance(payload, dict) and payload: content=json.dumps(payload, ensure_ascii=True)
     if not content: return None, make_json_error(400, "content is required")
-    return _truncate_webhook_content(content), None
+    webhook_name=(data.get("username") or data.get("name") or "").strip()
+    webhook_pfp=data.get("avatar_url") if service=="discord" else data.get("pfp")
+    webhook_pfp, error_resp=_validate_webhook_pfp(webhook_pfp)
+    if error_resp: return None, error_resp
+    if webhook_name and len(webhook_name)>50: return None, make_json_error(400, "Invalid webhook username parameter, error: length")
+    return {"content": _truncate_webhook_content(content), "name": webhook_name or None, "pfp": webhook_pfp}, None
 
 @webhooks_bp.route("/channel/<string:channel_id>/webhooks", methods=["GET"])
 @logged_in()
@@ -94,7 +108,7 @@ def list_webhooks(db:SQLite, id, channel_id):
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
     webhooks=db.execute_raw_sql("""
-        SELECT w.id, w.name, w.created_at, w.last_used_at, u.username as created_by_username, u.display_name as created_by_display
+        SELECT w.id, w.name, w.pfp, w.created_at, w.last_used_at, u.username as created_by_username, u.display_name as created_by_display
         FROM webhooks w
         LEFT JOIN users u ON u.id=w.created_by
         WHERE w.channel_id=?
@@ -112,17 +126,16 @@ def list_webhooks(db:SQLite, id, channel_id):
 def create_webhook(db:SQLite, id, channel_id):
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
-    name=(request.form.get("name") or (request.get_json(silent=True) or {}).get("name") or "").strip()
+    body=request.get_json(silent=True) or {}
+    name=(request.form.get("name") or body.get("name") or "").strip()
     if len(name)<1 or len(name)>50: return make_json_error(400, "Invalid name parameter, error: length")
+    pfp, error_resp=_validate_webhook_pfp(request.form.get("pfp") or body.get("pfp"))
+    if error_resp: return error_resp
     webhook_id=generate()
     webhook_token=generate(32)
-    webhook_user_id=generate()
-    username=f"wh_{webhook_id[:16]}"
     now=timestamp(True)
-    with db:
-        db.insert_data("users", {"id": webhook_user_id, "username": username, "display_name": name, "pfp": None, "passkey": generate(), "public_key": "webhook", "created_at": timestamp()})
-        db.insert_data("webhooks", {"id": webhook_id, "channel_id": channel_id, "user_id": webhook_user_id, "name": name, "token_hash": hash_token(webhook_token), "created_by": id, "created_at": now, "last_used_at": None})
-    webhook={"id": webhook_id, "name": name, "created_at": now, "last_used_at": None, "url": _build_webhook_path(channel_id, webhook_id), "discord_url": _build_webhook_path(channel_id, webhook_id, "discord"), "github_url": _build_webhook_path(channel_id, webhook_id, "github")}
+    db.insert_data("webhooks", {"id": webhook_id, "channel_id": channel_id, "name": name, "pfp": pfp, "token_hash": hash_token(webhook_token), "created_by": id, "created_at": now, "last_used_at": None})
+    webhook={"id": webhook_id, "name": name, "pfp": pfp, "created_at": now, "last_used_at": None, "url": _build_webhook_path(channel_id, webhook_id), "discord_url": _build_webhook_path(channel_id, webhook_id, "discord"), "github_url": _build_webhook_path(channel_id, webhook_id, "github")}
     return jsonify({"webhook": webhook, "token": webhook_token, "send_url": _build_webhook_path(channel_id, webhook_id, token=webhook_token), "discord_send_url": _build_webhook_path(channel_id, webhook_id, "discord", webhook_token), "github_send_url": _build_webhook_path(channel_id, webhook_id, "github", webhook_token), "success": True}), 201
 
 @webhooks_bp.route("/channel/<string:channel_id>/webhooks/<string:webhook_id>", methods=["POST", "DELETE"])
@@ -138,15 +151,16 @@ def webhook_action(channel_id, webhook_id, service=None):
         if request.method=="DELETE":
             db.delete_data("webhooks", {"id": webhook_id, "channel_id": channel_id})
             return jsonify({"success": True})
-        content, error_resp=_get_webhook_content(service)
+        payload, error_resp=_get_webhook_content(service)
         if error_resp: return error_resp
         sent_at=timestamp(True)
         message_id=generate()
-        db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": webhook_data["user_id"], "content": content, "key": None, "iv": None, "timestamp": sent_at, "replied_to": None, "signature": None, "signed_timestamp": None, "nonce": None})
+        webhook_name=payload["name"] or webhook_data["name"]
+        webhook_pfp=payload["pfp"] if payload["pfp"] is not None else webhook_data["pfp"]
+        db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": "0", "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "replied_to": None, "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp})
         db.update_data("webhooks", {"last_used_at": sent_at}, {"id": webhook_id})
-        user_data=db.execute_raw_sql("SELECT username, display_name AS display, pfp FROM users WHERE id=?", (webhook_data["user_id"],))[0]
-        message_data={"id": message_id, "content": content, "key": None, "iv": None, "timestamp": sent_at, "edited_at": None, "replied_to": None, "user": user_data, "attachments": [], "signature": None, "signed_timestamp": None, "nonce": None}
-        message_sent(channel_id, message_data, webhook_data["user_id"], db)
+        message_data={"id": message_id, "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "edited_at": None, "replied_to": None, "user": {"username": None, "display": webhook_name, "pfp": webhook_pfp}, "attachments": [], "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp}
+        message_sent(channel_id, message_data, "0", db)
         return jsonify({"message_id": message_id, "success": True}), 201
     finally:
         db.close()

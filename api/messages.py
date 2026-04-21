@@ -49,7 +49,7 @@ def channel_messages(db:SQLite, id, channel_id):
     if before_messages>100: before_messages=100
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "NULL AS user, ",
             "NULL AS signature, ",
             "NULL AS signed_timestamp, ",
@@ -68,11 +68,11 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "json_object(",
-            "  'username', u.username, ",
-            "  'display', u.display_name, ",
-            "  'pfp', u.pfp",
+            "  'username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, ",
+            "  'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, ",
+            "  'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END",
             ") AS user, ",
             "m.signature, ",
             "m.signed_timestamp, ",
@@ -92,7 +92,7 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     params=[channel_id, member_message_seq]
     if "user_id" in request.args:
-        if len(request.args["user_id"])!=20: return make_json_error(400, "Invalid user_id parameter, error: length")
+        if request.args["user_id"]!="0" and len(request.args["user_id"])!=20: return make_json_error(400, "Invalid user_id parameter, error: length")
         sql_parts.append("AND m.user_id=?")
         params.append(request.args["user_id"])
     if "before" in request.args and "after" in request.args:
@@ -298,8 +298,8 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         # Get updated message data for emit
         updated_message=db.execute_raw_sql("""
-            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce,
-            json_object('username', u.username, 'display', u.display_name, 'pfp', u.pfp) as user,
+            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp,
+            json_object('username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, 'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, 'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END) as user,
             (SELECT json_group_array(json_object('id', am.file_id, 'filename', f.filename, 'size', f.size, 'mimetype', f.mimetype, 'encrypted', am.encrypted, 'iv', am.iv))
              FROM attachment_message am JOIN files f ON am.file_id = f.id WHERE am.message_id = m.id) as attachments
             FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id=?

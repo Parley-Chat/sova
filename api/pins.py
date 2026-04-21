@@ -33,7 +33,7 @@ def get_pinned_messages(db:SQLite, id, channel_id):
     page_size, offset = pagination["page_size"], pagination["offset"]
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "NULL AS user, ",
             "(SELECT json_group_array(json_object(",
             "   'id', am.file_id, ",
@@ -51,11 +51,11 @@ def get_pinned_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "json_object(",
-            "  'username', u.username, ",
-            "  'display', u.display_name, ",
-            "  'pfp', u.pfp",
+            "  'username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, ",
+            "  'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, ",
+            "  'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END",
             ") AS user, ",
             "(SELECT json_group_array(json_object(",
             "   'id', am.file_id, ",
