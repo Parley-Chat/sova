@@ -105,6 +105,7 @@ def _get_webhook_content(service):
 @logged_in()
 @sliding_window_rate_limiter(limit=100, window=60, user_limit=50)
 def list_webhooks(db:SQLite, id, channel_id):
+    if not config["webhooks"]["enabled"]: return make_json_error(403, "Webhooks are disabled")
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
     webhooks=db.execute_raw_sql("""
@@ -124,6 +125,7 @@ def list_webhooks(db:SQLite, id, channel_id):
 @logged_in()
 @sliding_window_rate_limiter(limit=20, window=300, user_limit=10)
 def create_webhook(db:SQLite, id, channel_id):
+    if not config["webhooks"]["enabled"]: return make_json_error(403, "Webhooks are disabled")
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
     body=request.get_json(silent=True) or {}
@@ -135,13 +137,14 @@ def create_webhook(db:SQLite, id, channel_id):
     webhook_token=generate(32)
     now=timestamp(True)
     db.insert_data("webhooks", {"id": webhook_id, "channel_id": channel_id, "name": name, "pfp": pfp, "token_hash": hash_token(webhook_token), "created_by": id, "created_at": now, "last_used_at": None})
-    webhook={"id": webhook_id, "name": name, "pfp": pfp, "created_at": now, "last_used_at": None, "url": _build_webhook_path(channel_id, webhook_id), "discord_url": _build_webhook_path(channel_id, webhook_id, "discord"), "github_url": _build_webhook_path(channel_id, webhook_id, "github")}
-    return jsonify({"webhook": webhook, "token": webhook_token, "send_url": _build_webhook_path(channel_id, webhook_id, token=webhook_token), "discord_send_url": _build_webhook_path(channel_id, webhook_id, "discord", webhook_token), "github_send_url": _build_webhook_path(channel_id, webhook_id, "github", webhook_token), "success": True}), 201
+    webhook={"id": webhook_id, "name": name, "pfp": pfp, "created_at": now, "last_used_at": None, "url": _build_webhook_path(channel_id, webhook_id)}
+    return jsonify({"webhook": webhook, "token": webhook_token, "send_url": _build_webhook_path(channel_id, webhook_id, token=webhook_token), "success": True}), 201
 
 @webhooks_bp.route("/channel/<string:channel_id>/webhooks/<string:webhook_id>", methods=["POST", "DELETE"])
 @webhooks_bp.route("/channel/<string:channel_id>/webhooks/<string:webhook_id>/<string:service>", methods=["POST"])
 @sliding_window_rate_limiter(limit=100, window=60)
 def webhook_action(channel_id, webhook_id, service=None):
+    if not config["webhooks"]["enabled"]: return make_json_error(403, "Webhooks are disabled")
     db=SQLite()
     try:
         token=request.args.get("token")
