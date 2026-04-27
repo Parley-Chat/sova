@@ -159,9 +159,8 @@ def sending_messages(db:SQLite, id, channel_id):
         if not user_public_key_data: return make_json_error(500, "User public key not found")
         public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
         if error_resp: return error_resp
-        signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
-        raw_signed_data=f"{raw_msg.strip()}:{channel_id}:{signed_timestamp}"
-        if not rsa_verify_signature(public_key, signature, signed_data) and not rsa_verify_signature(public_key, signature, raw_signed_data): return make_json_error(400, "Invalid signature")
+        signed_candidates={msg, raw_msg, raw_msg.strip(), raw_msg.rstrip("\r\n"), raw_msg.replace("\r\n", "\n").replace("\r", "\n"), raw_msg.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")}
+        if not any(rsa_verify_signature(public_key, signature, f"{candidate}:{channel_id}:{signed_timestamp}") for candidate in signed_candidates): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
     if data["type"]!=3:
@@ -287,9 +286,8 @@ def message_management(db:SQLite, id, channel_id, message_id):
             if not user_public_key_data: return make_json_error(500, "User public key not found")
             public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
             if error_resp: return error_resp
-            signed_data=f"{content}:{channel_id}:{signed_timestamp}"
-            raw_signed_data=f"{raw_content}:{channel_id}:{signed_timestamp}"
-            if not rsa_verify_signature(public_key, signature, signed_data) and not rsa_verify_signature(public_key, signature, raw_signed_data): return make_json_error(400, "Invalid signature")
+            signed_candidates={content, raw_content, raw_content.strip(), raw_content.rstrip("\r\n"), raw_content.replace("\r\n", "\n").replace("\r", "\n"), raw_content.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n")}
+            if not any(rsa_verify_signature(public_key, signature, f"{candidate}:{channel_id}:{signed_timestamp}") for candidate in signed_candidates): return make_json_error(400, "Invalid signature")
 
         if content==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
         update_fields={"content": content, "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
