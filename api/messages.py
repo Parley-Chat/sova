@@ -3,7 +3,7 @@ import json
 from .utils import (
     make_json_error, logged_in, sliding_window_rate_limiter,
     timestamp, perm, has_permission, validate_request_data,
-    get_file_size_chunked, public_key_open, rsa_verify_signature
+    get_file_size_chunked
 )
 from utils import generate
 from .stream import message_sent, message_edited, message_deleted, dm_unhide
@@ -153,13 +153,6 @@ def sending_messages(db:SQLite, id, channel_id):
     channel_permissions=data["channel_permissions"]
     if not has_permission(member_permissions, perm.send_messages, channel_permissions): return make_json_error(403, "No permission to send messages")
     if len(msg)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
-    if data["type"]==3:
-        user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
-        if not user_public_key_data: return make_json_error(500, "User public key not found")
-        public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
-        if error_resp: return error_resp
-        signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
-        if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
     if data["type"]!=3:
@@ -279,14 +272,6 @@ def message_management(db:SQLite, id, channel_id, message_id):
         signature=request.form["signature"]
         current_time=timestamp()
         if abs(current_time-signed_timestamp)>config["messages"]["signature_timestamp_window"]: return make_json_error(400, "Timestamp is invalid")
-        if data["type"]==3:
-            user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
-            if not user_public_key_data: return make_json_error(500, "User public key not found")
-            public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
-            if error_resp: return error_resp
-            signed_data=f"{content}:{channel_id}:{signed_timestamp}"
-            if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
-
         if content==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
         update_fields={"content": content, "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
 
