@@ -128,7 +128,8 @@ def channel_messages(db:SQLite, id, channel_id):
 @validate_request_data({"content": {}, "timestamp": {}, "signature": {}})
 def sending_messages(db:SQLite, id, channel_id):
     files=request.files.getlist("files")
-    msg=request.form["content"].replace("\r\n", "\n").replace("\r", "\n").strip()
+    raw_msg=request.form["content"]
+    msg=raw_msg.replace("\r\n", "\n").replace("\r", "\n").strip()
     has_files=any(file.filename for file in files)
     if (not has_files and not msg): return make_json_error(400, "content or files required")
     replied_to=request.form.get("replied_to")
@@ -159,7 +160,8 @@ def sending_messages(db:SQLite, id, channel_id):
         public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
         if error_resp: return error_resp
         signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
-        if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
+        raw_signed_data=f"{raw_msg.strip()}:{channel_id}:{signed_timestamp}"
+        if not rsa_verify_signature(public_key, signature, signed_data) and not rsa_verify_signature(public_key, signature, raw_signed_data): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
     if data["type"]!=3:
@@ -267,7 +269,8 @@ def message_management(db:SQLite, id, channel_id, message_id):
     data=message_channel_data[0]
     if data["channel_id"]!=channel_id: return make_json_error(404, "Message not found")
     if request.method=="PATCH":
-        content=request.form.get("content")
+        raw_content=request.form.get("content")
+        content=raw_content
         if content is None: return make_json_error(400, "content is required")
         content=content.replace("\r\n", "\n").replace("\r", "\n")
         if request.form.get("timestamp") is None: return make_json_error(400, "timestamp is required")
@@ -285,7 +288,8 @@ def message_management(db:SQLite, id, channel_id, message_id):
             public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
             if error_resp: return error_resp
             signed_data=f"{content}:{channel_id}:{signed_timestamp}"
-            if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
+            raw_signed_data=f"{raw_content}:{channel_id}:{signed_timestamp}"
+            if not rsa_verify_signature(public_key, signature, signed_data) and not rsa_verify_signature(public_key, signature, raw_signed_data): return make_json_error(400, "Invalid signature")
 
         if content==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
         update_fields={"content": content, "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
