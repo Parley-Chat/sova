@@ -128,7 +128,7 @@ def channel_messages(db:SQLite, id, channel_id):
 @validate_request_data({"content": {}, "timestamp": {}, "signature": {}})
 def sending_messages(db:SQLite, id, channel_id):
     files=request.files.getlist("files")
-    msg=request.form["content"].strip()
+    msg=request.form["content"].replace("\r\n", "\n").replace("\r", "\n").strip()
     has_files=any(file.filename for file in files)
     if (not has_files and not msg): return make_json_error(400, "content or files required")
     replied_to=request.form.get("replied_to")
@@ -269,6 +269,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
     if request.method=="PATCH":
         content=request.form.get("content")
         if content is None: return make_json_error(400, "content is required")
+        content=content.replace("\r\n", "\n").replace("\r", "\n")
         if request.form.get("timestamp") is None: return make_json_error(400, "timestamp is required")
         if request.form.get("signature") is None: return make_json_error(400, "signature is required")
         if len(content)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
