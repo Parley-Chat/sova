@@ -129,9 +129,10 @@ def create_webhook(db:SQLite, id, channel_id):
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
     body=request.get_json(silent=True) or {}
-    name=(request.form.get("name") or body.get("name") or "").strip()
+    data=request.form if request.form else body
+    name=(data.get("name") or "").strip()
     if len(name)<1 or len(name)>50: return make_json_error(400, "Invalid name parameter, error: length")
-    pfp, error_resp=_validate_webhook_pfp(request.form.get("pfp") or body.get("pfp"))
+    pfp, error_resp=_validate_webhook_pfp(data.get("pfp"))
     if error_resp: return error_resp
     webhook_id=generate()
     webhook_token=generate(32)
@@ -159,7 +160,7 @@ def webhook_action(channel_id, webhook_id, service=None):
         sent_at=timestamp(True)
         message_id=generate()
         webhook_name=payload["name"] or webhook_data["name"]
-        webhook_pfp=payload["pfp"] if payload["pfp"] is not None else webhook_data["pfp"]
+        webhook_pfp=payload["pfp"]
         db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": "0", "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "replied_to": None, "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp})
         db.update_data("webhooks", {"last_used_at": sent_at}, {"id": webhook_id})
         message_data={"id": message_id, "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "edited_at": None, "replied_to": None, "user": {"username": None, "display": webhook_name, "pfp": webhook_pfp}, "attachments": [], "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp}
