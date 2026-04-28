@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import json
 import re
-from .utils import make_json_error, logged_in, sliding_window_rate_limiter, timestamp, perm, has_permission, hash_token
+from .utils import make_json_error, logged_in, sliding_window_rate_limiter, timestamp, perm, has_permission
 from .stream import message_sent
 from utils import generate, config
 from db import SQLite
@@ -31,13 +31,13 @@ def _build_webhook_path(channel_id, webhook_id, service=None, token=None):
 
 def _get_webhook_data(db, channel_id, webhook_id, token):
     webhook_data=db.execute_raw_sql("""
-        SELECT w.id, w.channel_id, w.name, w.pfp, w.token_hash, c.type
+        SELECT w.id, w.channel_id, w.name, w.pfp, w.token, c.type
         FROM webhooks w
         JOIN channels c ON c.id=w.channel_id
         WHERE w.id=? AND w.channel_id=?
     """, (webhook_id, channel_id))
     if not webhook_data: return None, make_json_error(404, "Webhook not found")
-    if webhook_data[0]["token_hash"]!=hash_token(token): return None, make_json_error(401, "Invalid webhook token")
+    if webhook_data[0]["token"]!=token: return None, make_json_error(401, "Invalid webhook token")
     if webhook_data[0]["type"]!=3: return None, make_json_error(400, "Webhooks are only supported in broadcast channels")
     return webhook_data[0], None
 
@@ -109,7 +109,7 @@ def list_webhooks(db:SQLite, id, channel_id):
     _, error_resp=_get_manageable_channel(db, id, channel_id)
     if error_resp: return error_resp
     webhooks=db.execute_raw_sql("""
-        SELECT w.id, w.name, w.pfp, w.created_at, w.last_used_at, u.username as created_by_username, u.display_name as created_by_display
+        SELECT w.id, w.name, w.pfp, w.token, w.created_at, w.last_used_at, u.username as created_by_username, u.display_name as created_by_display
         FROM webhooks w
         LEFT JOIN users u ON u.id=w.created_by
         WHERE w.channel_id=?
@@ -117,8 +117,6 @@ def list_webhooks(db:SQLite, id, channel_id):
     """, (channel_id,))
     for webhook in webhooks:
         webhook["url"]=_build_webhook_path(channel_id, webhook["id"])
-        webhook["discord_url"]=_build_webhook_path(channel_id, webhook["id"], "discord")
-        webhook["github_url"]=_build_webhook_path(channel_id, webhook["id"], "github")
     return jsonify(webhooks)
 
 @webhooks_bp.route("/channel/<string:channel_id>/webhooks", methods=["POST"])
@@ -137,7 +135,7 @@ def create_webhook(db:SQLite, id, channel_id):
     webhook_id=generate()
     webhook_token=generate(32)
     now=timestamp(True)
-    db.insert_data("webhooks", {"id": webhook_id, "channel_id": channel_id, "name": name, "pfp": pfp, "token_hash": hash_token(webhook_token), "created_by": id, "created_at": now, "last_used_at": None})
+    db.insert_data("webhooks", {"id": webhook_id, "channel_id": channel_id, "name": name, "pfp": pfp, "token": webhook_token, "created_by": id, "created_at": now, "last_used_at": None})
     webhook={"id": webhook_id, "name": name, "pfp": pfp, "created_at": now, "last_used_at": None, "url": _build_webhook_path(channel_id, webhook_id)}
     return jsonify({"webhook": webhook, "token": webhook_token, "send_url": _build_webhook_path(channel_id, webhook_id, token=webhook_token), "success": True}), 201
 

@@ -31,7 +31,7 @@ with SQLite() as db:
     db.create_table("blocks", {"seq": "INTEGER PRIMARY KEY AUTOINCREMENT", "blocker_id": "TEXT NOT NULL", "blocked_id": "TEXT NOT NULL", "blocked_at": "INTEGER NOT NULL", "UNIQUE": "(blocker_id, blocked_id)", "FOREIGN KEY (blocker_id)": "REFERENCES users (id) ON DELETE CASCADE", "FOREIGN KEY (blocked_id)": "REFERENCES users (id) ON DELETE CASCADE"})
     db.create_table("calls", {"channel_id": "TEXT PRIMARY KEY", "started_by": "TEXT NOT NULL", "started_at": "INTEGER NOT NULL", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (started_by)": "REFERENCES users (id) ON DELETE CASCADE"})
     db.create_table("call_participants", {"channel_id": "TEXT NOT NULL", "user_id": "TEXT NOT NULL", "joined_at": "INTEGER NOT NULL", "left_at": "INTEGER", "PRIMARY KEY": "(channel_id, user_id)", "FOREIGN KEY (channel_id)": "REFERENCES calls (channel_id) ON DELETE CASCADE", "FOREIGN KEY (user_id)": "REFERENCES users (id) ON DELETE CASCADE"})
-    db.create_table("webhooks", {"id": "TEXT PRIMARY KEY", "channel_id": "TEXT NOT NULL", "name": "TEXT NOT NULL", "pfp": "TEXT", "token_hash": "TEXT NOT NULL", "created_by": "TEXT", "created_at": "INTEGER NOT NULL", "last_used_at": "INTEGER", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (created_by)": "REFERENCES users (id) ON DELETE SET NULL"})
+    db.create_table("webhooks", {"id": "TEXT PRIMARY KEY", "channel_id": "TEXT NOT NULL", "name": "TEXT NOT NULL", "pfp": "TEXT", "token": "TEXT NOT NULL", "created_by": "TEXT", "created_at": "INTEGER NOT NULL", "last_used_at": "INTEGER", "FOREIGN KEY (channel_id)": "REFERENCES channels (id) ON DELETE CASCADE", "FOREIGN KEY (created_by)": "REFERENCES users (id) ON DELETE SET NULL"})
     db.create_index("session", "user")
     db.create_index("members", "channel_id")
     db.create_index("members", "message_seq")
@@ -49,7 +49,7 @@ with SQLite() as db:
     db.create_index("call_participants", "channel_id")
     db.create_index("call_participants", "user_id")
     db.create_index("webhooks", "channel_id")
-    db.create_index("webhooks", "token_hash", unique=True)
+    db.create_index("webhooks", "token", unique=True)
     if not db.exists("users", {"id": "0"}): db.insert_data("users", {"id": "0", "username": "__parley_webhooks_system_account_do_not_use__", "display_name": "System", "pfp": None, "passkey": "system", "public_key": "system", "created_at": 0})
     if db.execute_raw_sql("PRAGMA user_version;")[0]["user_version"]!=db_version: db.execute_raw_sql(f"PRAGMA user_version={db_version};")
 
