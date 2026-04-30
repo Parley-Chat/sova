@@ -48,12 +48,12 @@ def channels(db:SQLite, id):
                        'signature', last_msg.signature,
                        'signed_timestamp', last_msg.signed_timestamp,
                        'nonce', last_msg.nonce,
-                       'user',
-                           json_object(
-                               'username', last_msg_user.username,
-                               'display', last_msg_user.display_name,
-                               'pfp', last_msg_user.pfp
-                           ),
+                        'user',
+                            json_object(
+                                'username', CASE WHEN last_msg.user_id='0' THEN NULL ELSE last_msg_user.username END,
+                                'display', CASE WHEN last_msg.user_id='0' THEN last_msg.webhook_name ELSE last_msg_user.display_name END,
+                                'pfp', CASE WHEN last_msg.user_id='0' THEN last_msg.webhook_pfp ELSE last_msg_user.pfp END
+                            ),
                        'attachments', (
                            SELECT json_group_array(json_object(
                                'id', am.file_id,

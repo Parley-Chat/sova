@@ -3,7 +3,7 @@ import json
 from .utils import (
     make_json_error, logged_in, sliding_window_rate_limiter,
     timestamp, perm, has_permission, validate_request_data,
-    get_file_size_chunked
+    get_file_size_chunked, public_key_open, rsa_verify_signature
 )
 from utils import generate
 from .stream import message_sent, message_edited, message_deleted, dm_unhide
@@ -49,7 +49,7 @@ def channel_messages(db:SQLite, id, channel_id):
     if before_messages>100: before_messages=100
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "NULL AS user, ",
             "NULL AS signature, ",
             "NULL AS signed_timestamp, ",
@@ -68,11 +68,11 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
             "json_object(",
-            "  'username', u.username, ",
-            "  'display', u.display_name, ",
-            "  'pfp', u.pfp",
+            "  'username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, ",
+            "  'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, ",
+            "  'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END",
             ") AS user, ",
             "m.signature, ",
             "m.signed_timestamp, ",
@@ -92,7 +92,7 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     params=[channel_id, member_message_seq]
     if "user_id" in request.args:
-        if len(request.args["user_id"])!=20: return make_json_error(400, "Invalid user_id parameter, error: length")
+        if request.args["user_id"]!="0" and len(request.args["user_id"])!=20: return make_json_error(400, "Invalid user_id parameter, error: length")
         sql_parts.append("AND m.user_id=?")
         params.append(request.args["user_id"])
     if "before" in request.args and "after" in request.args:
@@ -128,7 +128,7 @@ def channel_messages(db:SQLite, id, channel_id):
 @validate_request_data({"content": {}, "timestamp": {}, "signature": {}})
 def sending_messages(db:SQLite, id, channel_id):
     files=request.files.getlist("files")
-    msg=request.form["content"].replace("\r\n", "\n").replace("\r", "\n").strip()
+    msg=request.form["content"].strip()
     has_files=any(file.filename for file in files)
     if (not has_files and not msg): return make_json_error(400, "content or files required")
     replied_to=request.form.get("replied_to")
@@ -153,6 +153,13 @@ def sending_messages(db:SQLite, id, channel_id):
     channel_permissions=data["channel_permissions"]
     if not has_permission(member_permissions, perm.send_messages, channel_permissions): return make_json_error(403, "No permission to send messages")
     if len(msg)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
+    if data["type"]==3:
+        user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+        if not user_public_key_data: return make_json_error(500, "User public key not found")
+        public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
+        if error_resp: return error_resp
+        signed_data=f"{msg}:{channel_id}:{signed_timestamp}"
+        if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
     key=None
     iv=None
     if data["type"]!=3:
@@ -262,7 +269,6 @@ def message_management(db:SQLite, id, channel_id, message_id):
     if request.method=="PATCH":
         content=request.form.get("content")
         if content is None: return make_json_error(400, "content is required")
-        content=content.replace("\r\n", "\n").replace("\r", "\n")
         if request.form.get("timestamp") is None: return make_json_error(400, "timestamp is required")
         if request.form.get("signature") is None: return make_json_error(400, "signature is required")
         if len(content)>(config["messages"]["max_message_length"] if data["type"]==3 else max_encrypted_msg_len): return make_json_error(400, "Message too long")
@@ -272,6 +278,14 @@ def message_management(db:SQLite, id, channel_id, message_id):
         signature=request.form["signature"]
         current_time=timestamp()
         if abs(current_time-signed_timestamp)>config["messages"]["signature_timestamp_window"]: return make_json_error(400, "Timestamp is invalid")
+        if data["type"]==3:
+            user_public_key_data=db.execute_raw_sql("SELECT public_key FROM users WHERE id=?", (id,))
+            if not user_public_key_data: return make_json_error(500, "User public key not found")
+            public_key, error_resp=public_key_open(user_public_key_data[0]["public_key"])
+            if error_resp: return error_resp
+            signed_data=f"{content}:{channel_id}:{signed_timestamp}"
+            if not rsa_verify_signature(public_key, signature, signed_data): return make_json_error(400, "Invalid signature")
+
         if content==data["content"] and (data["type"]==3 or request.form.get("iv")==data["iv"]): return jsonify({"success": True})
         update_fields={"content": content, "edited_at": timestamp(True), "signature": signature, "signed_timestamp": signed_timestamp}
 
@@ -284,8 +298,8 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         # Get updated message data for emit
         updated_message=db.execute_raw_sql("""
-            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce,
-            json_object('username', u.username, 'display', u.display_name, 'pfp', u.pfp) as user,
+            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp,
+            json_object('username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, 'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, 'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END) as user,
             (SELECT json_group_array(json_object('id', am.file_id, 'filename', f.filename, 'size', f.size, 'mimetype', f.mimetype, 'encrypted', am.encrypted, 'iv', am.iv))
              FROM attachment_message am JOIN files f ON am.file_id = f.id WHERE am.message_id = m.id) as attachments
             FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id=?
