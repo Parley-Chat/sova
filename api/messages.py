@@ -49,7 +49,7 @@ def channel_messages(db:SQLite, id, channel_id):
     if before_messages>100: before_messages=100
     if hide_author:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, ",
             "NULL AS user, ",
             "NULL AS signature, ",
             "NULL AS signed_timestamp, ",
@@ -68,7 +68,7 @@ def channel_messages(db:SQLite, id, channel_id):
         ]
     else:
         sql_parts=[
-            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp, ",
+            "SELECT m.content, m.id, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.nonce, m.webhook_id, ",
             "json_object(",
             "  'username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, ",
             "  'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, ",
@@ -285,7 +285,7 @@ def message_management(db:SQLite, id, channel_id, message_id):
 
         # Get updated message data for emit
         updated_message=db.execute_raw_sql("""
-            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id, m.webhook_name, m.webhook_pfp,
+            SELECT m.id, m.content, m.key, m.iv, m.timestamp, m.edited_at, m.replied_to, m.signature, m.signed_timestamp, m.nonce, m.webhook_id,
             json_object('username', CASE WHEN m.user_id='0' THEN NULL ELSE u.username END, 'display', CASE WHEN m.user_id='0' THEN m.webhook_name ELSE u.display_name END, 'pfp', CASE WHEN m.user_id='0' THEN m.webhook_pfp ELSE u.pfp END) as user,
             (SELECT json_group_array(json_object('id', am.file_id, 'filename', f.filename, 'size', f.size, 'mimetype', f.mimetype, 'encrypted', am.encrypted, 'iv', am.iv))
              FROM attachment_message am JOIN files f ON am.file_id = f.id WHERE am.message_id = m.id) as attachments

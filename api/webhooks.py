@@ -7,7 +7,7 @@ from utils import generate, config
 from db import SQLite
 
 webhooks_bp=Blueprint("webhooks", __name__)
-data_uri_regex=re.compile(r"^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$")
+data_uri_regex=re.compile(r"^data:image\/(png|jpeg|jpg|webp|gif|x-icon);base64,[A-Za-z0-9+/=]+$")
 
 def _get_manageable_channel(db, id, channel_id):
     member_channel_data=db.execute_raw_sql("""
@@ -157,10 +157,10 @@ def webhook_action(channel_id, webhook_id, service=None):
         sent_at=timestamp(True)
         message_id=generate()
         webhook_name=payload["name"] or webhook_data["name"]
-        webhook_pfp=payload["pfp"]
+        webhook_pfp=payload["pfp"] or webhook_data["pfp"]
         db.insert_data("messages", {"id": message_id, "channel_id": channel_id, "user_id": "0", "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "replied_to": None, "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp})
         db.update_data("webhooks", {"last_used_at": sent_at}, {"id": webhook_id})
-        message_data={"id": message_id, "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "edited_at": None, "replied_to": None, "user": {"username": None, "display": webhook_name, "pfp": webhook_pfp}, "attachments": [], "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id, "webhook_name": webhook_name, "webhook_pfp": webhook_pfp}
+        message_data={"id": message_id, "content": payload["content"], "key": None, "iv": None, "timestamp": sent_at, "edited_at": None, "replied_to": None, "user": {"username": None, "display": webhook_name, "pfp": webhook_pfp}, "attachments": [], "signature": None, "signed_timestamp": None, "nonce": None, "webhook_id": webhook_id}
         message_sent(channel_id, message_data, "0", db)
         return jsonify({"message_id": message_id, "success": True}), 201
     finally:
